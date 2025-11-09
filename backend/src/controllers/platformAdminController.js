@@ -1,0 +1,421 @@
+const { PlatformAdmin, Owner } = require('../models');
+const { generateTokenPair } = require('../config/jwt');
+const ResponseHelper = require('../utils/responseHelper');
+const logger = require('../utils/logger');
+const crypto = require('crypto');
+
+/**
+ * Platform Admin Login
+ * POST /api/platform/login
+ */
+const platformAdminLogin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    // Find platform admin
+    const admin = await PlatformAdmin.findOne({ email }).select('+password');
+    
+    if (!admin) {
+      return ResponseHelper.unauthorized(res, 'Invalid email or password');
+    }
+    
+    // Check if account is active
+    if (!admin.isActive) {
+      return ResponseHelper.forbidden(res, 'Your account has been deactivated');
+    }
+    
+    // Verify password
+    const isPasswordValid = await admin.comparePassword(password);
+    
+    if (!isPasswordValid) {
+      return ResponseHelper.unauthorized(res, 'Invalid email or password');
+    }
+    
+    // Update last login
+    admin.lastLogin = new Date();
+    await admin.save();
+    
+    // Generate tokens
+    const tokens = generateTokenPair({
+      userId: admin._id,
+      role: 'superadmin'
+    });
+    
+    // Set refresh token in httpOnly cookie
+    res.cookie('refreshToken', tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+    
+    logger.info(`Platform admin logged in: ${admin._id}`);
+    
+    return ResponseHelper.success(res, 200, 'Login successful', {
+      accessToken: tokens.accessToken,
+      user: {
+        id: admin._id,
+        fullName: admin.fullName,
+        email: admin.email,
+        role: 'superadmin'
+      }
+    });
+  } catch (error) {
+    logger.error('Platform admin login error:', error);
+    return ResponseHelper.error(res, 500, 'Login failed');
+  }
+};
+
+/**
+ * Create Restaurant Owner
+ * POST /api/platform/owners
+ */
+const createOwner = async (req, res) => {
+  try {
+    const { fullName, email, phone, password } = req.body;
+    
+    // Check if owner already exists
+    const existingOwner = await Owner.findOne({ email });
+    
+    if (existingOwner) {
+      return ResponseHelper.error(res, 400, 'Owner with this email already exists');
+    }
+    
+    // Generate unique owner ID for database naming
+    const ownerId = `owner_${crypto.randomBytes(8).toString('hex')}`;
+    
+    // Create owner
+    const owner = await Owner.create({
+      _id: ownerId,
+      fullName,
+      email,
+      phone,
+      password,
+      isFirstLogin: true,
+      createdBy: req.user.id,
+      ownedDatabases: [`owner_${ownerId}`]
+    });
+    
+    logger.info(`Owner created by platform admin: ${owner._id}`);
+    
+    // Log audit
+    // TODO: Create audit log entry
+    
+    return ResponseHelper.created(res, 'Restaurant owner created successfully', {
+      owner: {
+        id: owner._id,
+        fullName: owner.fullName,
+        email: owner.email,
+        phone: owner.phone,
+        isFirstLogin: owner.isFirstLogin,
+        createdAt: owner.createdAt
+      },
+      loginCredentials: {
+        email: owner.email,
+        temporaryPassword: 'Please share the password securely',
+        loginUrl: `${process.env.FRONTEND_URL}/admin/login`
+      }
+    });
+  } catch (error) {
+    logger.error('Create owner error:', error);
+    return ResponseHelper.error(res, 500, 'Failed to create owner');
+  }
+};
+
+/**
+ * Get All Restaurant Owners
+ * GET /api/platform/owners
+ */
+const getAllOwners = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      isActive,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
+    
+    // Build query
+    const query = {};
+    
+    if (search) {
+      query.$or = [
+        { fullName: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { phone: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    if (isActive !== undefined) {
+      query.isActive = isActive === 'true';
+    }
+    
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
+    
+    // Execute query
+    const [owners, total] = await Promise.all([
+      Owner.find(query)
+        .select('-password')
+        .sort(sort)
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      Owner.countDocuments(query)
+    ]);
+    
+    // Get restaurant count for each owner (simplified - actual implementation would query each owner's DB)
+    const ownersWithStats = owners.map(owner => ({
+      ...owner,
+      restaurantCount: owner.ownedDatabases?.length || 0,
+      lastLogin: owner.lastLogin || null
+    }));
+    
+    return ResponseHelper.paginated(
+      res,
+      ownersWithStats,
+      parseInt(page),
+      parseInt(limit),
+      total
+    );
+  } catch (error) {
+    logger.error('Get all owners error:', error);
+    return ResponseHelper.error(res, 500, 'Failed to retrieve owners');
+  }
+};
+
+/**
+ * Get Single Owner Details
+ * GET /api/platform/owners/:id
+ */
+const getOwnerById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const owner = await Owner.findById(id).select('-password');
+    
+    if (!owner) {
+      return ResponseHelper.notFound(res, 'Owner not found');
+    }
+    
+    // Get additional stats (simplified)
+    const stats = {
+      totalRestaurants: owner.ownedDatabases?.length || 0,
+      accountAge: Math.floor((Date.now() - owner.createdAt) / (1000 * 60 * 60 * 24)), // days
+      lastLogin: owner.lastLogin,
+      isFirstLogin: owner.isFirstLogin
+    };
+    
+    return ResponseHelper.success(res, 200, 'Owner retrieved successfully', {
+      owner: {
+        ...owner.toObject(),
+        stats
+      }
+    });
+  } catch (error) {
+    logger.error('Get owner by ID error:', error);
+    return ResponseHelper.error(res, 500, 'Failed to retrieve owner');
+  }
+};
+
+/**
+ * Update Owner
+ * PUT /api/platform/owners/:id
+ */
+const updateOwner = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { fullName, email, phone, isActive } = req.body;
+    
+    const owner = await Owner.findById(id);
+    
+    if (!owner) {
+      return ResponseHelper.notFound(res, 'Owner not found');
+    }
+    
+    // Check if email is being changed and already exists
+    if (email && email !== owner.email) {
+      const existingOwner = await Owner.findOne({ email });
+      if (existingOwner) {
+        return ResponseHelper.error(res, 400, 'Email already in use');
+      }
+    }
+    
+    // Update fields
+    if (fullName) owner.fullName = fullName;
+    if (email) owner.email = email;
+    if (phone) owner.phone = phone;
+    if (isActive !== undefined) owner.isActive = isActive;
+    
+    await owner.save();
+    
+    logger.info(`Owner updated by platform admin: ${owner._id}`);
+    
+    return ResponseHelper.success(res, 200, 'Owner updated successfully', {
+      owner: {
+        id: owner._id,
+        fullName: owner.fullName,
+        email: owner.email,
+        phone: owner.phone,
+        isActive: owner.isActive
+      }
+    });
+  } catch (error) {
+    logger.error('Update owner error:', error);
+    return ResponseHelper.error(res, 500, 'Failed to update owner');
+  }
+};
+
+/**
+ * Deactivate/Activate Owner Account
+ * PATCH /api/platform/owners/:id/status
+ */
+const toggleOwnerStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isActive } = req.body;
+    
+    const owner = await Owner.findById(id);
+    
+    if (!owner) {
+      return ResponseHelper.notFound(res, 'Owner not found');
+    }
+    
+    owner.isActive = isActive;
+    await owner.save();
+    
+    logger.info(`Owner ${isActive ? 'activated' : 'deactivated'} by platform admin: ${owner._id}`);
+    
+    return ResponseHelper.success(res, 200, `Owner account ${isActive ? 'activated' : 'deactivated'} successfully`, {
+      owner: {
+        id: owner._id,
+        fullName: owner.fullName,
+        email: owner.email,
+        isActive: owner.isActive
+      }
+    });
+  } catch (error) {
+    logger.error('Toggle owner status error:', error);
+    return ResponseHelper.error(res, 500, 'Failed to update owner status');
+  }
+};
+
+/**
+ * Delete Owner (Soft Delete - deactivate instead)
+ * DELETE /api/platform/owners/:id
+ */
+const deleteOwner = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const owner = await Owner.findById(id);
+    
+    if (!owner) {
+      return ResponseHelper.notFound(res, 'Owner not found');
+    }
+    
+    // Soft delete - just deactivate
+    owner.isActive = false;
+    await owner.save();
+    
+    logger.warn(`Owner soft deleted by platform admin: ${owner._id}`);
+    
+    return ResponseHelper.success(res, 200, 'Owner account deactivated successfully');
+  } catch (error) {
+    logger.error('Delete owner error:', error);
+    return ResponseHelper.error(res, 500, 'Failed to delete owner');
+  }
+};
+
+/**
+ * Reset Owner Password
+ * POST /api/platform/owners/:id/reset-password
+ */
+const resetOwnerPassword = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { newPassword } = req.body;
+    
+    const owner = await Owner.findById(id);
+    
+    if (!owner) {
+      return ResponseHelper.notFound(res, 'Owner not found');
+    }
+    
+    // Set new password
+    owner.password = newPassword;
+    owner.isFirstLogin = true; // Force password change on next login
+    await owner.save();
+    
+    logger.info(`Owner password reset by platform admin: ${owner._id}`);
+    
+    return ResponseHelper.success(res, 200, 'Password reset successfully. Owner will be required to change it on next login.');
+  } catch (error) {
+    logger.error('Reset owner password error:', error);
+    return ResponseHelper.error(res, 500, 'Failed to reset password');
+  }
+};
+
+/**
+ * Get Platform Statistics
+ * GET /api/platform/stats
+ */
+const getPlatformStats = async (req, res) => {
+  try {
+    // Get basic stats
+    const [
+      totalOwners,
+      activeOwners,
+      inactiveOwners,
+      newOwnersThisMonth
+    ] = await Promise.all([
+      Owner.countDocuments(),
+      Owner.countDocuments({ isActive: true }),
+      Owner.countDocuments({ isActive: false }),
+      Owner.countDocuments({
+        createdAt: {
+          $gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+        }
+      })
+    ]);
+    
+    // Get recent owners
+    const recentOwners = await Owner.find()
+      .select('fullName email createdAt')
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .lean();
+    
+    return ResponseHelper.success(res, 200, 'Platform statistics retrieved successfully', {
+      stats: {
+        totalOwners,
+        activeOwners,
+        inactiveOwners,
+        newOwnersThisMonth,
+        // Additional stats can be added here
+        totalRestaurants: 0, // TODO: Aggregate from all owner databases
+        totalOrders: 0, // TODO: Aggregate from all owner databases
+        totalRevenue: 0 // TODO: Aggregate from all owner databases
+      },
+      recentOwners
+    });
+  } catch (error) {
+    logger.error('Get platform stats error:', error);
+    return ResponseHelper.error(res, 500, 'Failed to retrieve statistics');
+  }
+};
+
+module.exports = {
+  platformAdminLogin,
+  createOwner,
+  getAllOwners,
+  getOwnerById,
+  updateOwner,
+  toggleOwnerStatus,
+  deleteOwner,
+  resetOwnerPassword,
+  getPlatformStats
+};

@@ -1,0 +1,158 @@
+# ============================================
+# Node.js / Express Backend Gitignore
+# ============================================
+
+# --- Node ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# --- Environment / Secrets ---
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+config/*.env
+
+# --- Logs ---
+logs/
+*.log
+*.log.*
+logfile
+debug.log
+error.log
+combined.log
+
+# Winston log output files
+logs/*.log
+
+# --- Build / Cache / Temp ---
+dist/
+build/
+tmp/
+temp/
+.cache/
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- IDE & Editor ---
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# --- OS Generated ---
+.DS_Store
+ehthumbs.db
+Icon?
+Thumbs.db
+
+# --- Uploads / Assets (Dynamic) ---
+uploads/
+public/uploads/
+storage/
+assets/temp/
+src/uploads/
+
+# --- Coverage & Testing ---
+coverage/
+.nyc_output/
+test-results/
+jest-results/
+*.lcov
+
+# --- Local Database Dumps ---
+*.sql
+*.sqlite
+*.sqlite3
+dump.rdb
+*.bak
+*.tar
+*.zip
+*.tgz
+
+# --- Logs & Sessions ---
+sessions/
+*.session
+*.pid
+*.seed
+*.pid.lock
+
+# --- SSL Certificates / Keys ---
+*.pem
+*.key
+*.crt
+*.csr
+
+# --- Environment Generated Files ---
+.env.*
+.envrc
+.envrc.local
+.envrc.*
+.env.sample
+.env.example
+
+# --- Redis / Mongo Cache ---
+*.rdb
+*.bson
+dump.rdb
+
+# --- Cloud Storage Temp ---
+.cloudinary/
+.aws/
+.s3/
+
+# --- Build Artifacts (if Docker / CI/CD) ---
+Dockerfile~
+.dockerignore
+docker-compose.override.yml
+.env.docker
+.env.staging
+
+# --- Misc ---
+*.tgz
+*.tar.gz
+*.bak
+*.old
+*.orig
+*.rej
+*~
+
+# --- Frontend Artifacts (if present in monorepo) ---
+frontend/node_modules/
+frontend/build/
+frontend/dist/
+frontend/.env
+frontend/.cache/
+
+# --- Payment Credentials / Keys ---
+src/config/payment-keys.json
+src/config/keys.json
+stripe-keys.json
+razorpay-keys.json
+paypal-keys.json
+
+# --- Analytics / Error Tracking ---
+.sentryclirc
+sentry-debug.log
+
+# --- MacOS / Windows ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- Socket.io / Cache files ---
+socket.log
+socket-temp/
+redis-dump.rdb
+
+# --- Backups / temp ---
+backup/
+backups/
+__MACOSX/
