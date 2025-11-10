@@ -86,7 +86,7 @@ const createOwner = async (req, res) => {
     
     // Create owner
     const owner = await Owner.create({
-      _id: ownerId,
+      ownerId: ownerId,
       fullName,
       email,
       phone,
@@ -104,6 +104,7 @@ const createOwner = async (req, res) => {
     return ResponseHelper.created(res, 'Restaurant owner created successfully', {
       owner: {
         id: owner._id,
+        ownerId: owner.ownerId,
         fullName: owner.fullName,
         email: owner.email,
         phone: owner.phone,
