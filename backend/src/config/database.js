@@ -36,14 +36,20 @@ const connectDB = async () => {
 
 // Function to connect to owner-specific database
 const connectOwnerDB = (ownerId) => {
-  const dbName = `owner_${ownerId}`;
-  
-  if (mongoose.connection.db && mongoose.connection.db.databaseName === dbName) {
+  if (!ownerId) throw new Error('ownerId is required to connect owner DB');
+
+  const dbName = `owner_${ownerId.replace(/^owner_/, '')}`; // ownerId must be the ObjectId string
+
+  // If current connection is already to that db, return it
+  if (mongoose.connection?.db && mongoose.connection.db.databaseName === dbName) {
     return mongoose.connection;
   }
 
-  return mongoose.connection.useDb(dbName, { useCache: true });
+  // Use and cache the DB connection
+  const ownerConnection = mongoose.connection.useDb(dbName, { useCache: true });
+  return ownerConnection;
 };
+
 
 // Get platform main database connection
 const getPlatformDB = () => {

@@ -38,22 +38,22 @@ const getOwnerModels = (ownerId) => {
   if (!ownerId) {
     throw new Error('ownerId is required to get owner models');
   }
-
+  const cleanId = ownerId.replace(/^owner_/, '');
   return {
-    Restaurant: getRestaurantModel(ownerId),
-    Manager: getManagerModel(ownerId),
-    Employee: getEmployeeModel(ownerId),
-    Menu: getMenuModel(ownerId),
-    Order: getOrderModel(ownerId),
-    Customer: getCustomerModel(ownerId),
-    Table: getTableModel(ownerId),
-    Reservation: getReservationModel(ownerId),
-    Inventory: getInventoryModel(ownerId),
-    Coupon: getCouponModel(ownerId),
-    LoyaltyPoint: getLoyaltyPointModel(ownerId),
-    Transaction: getTransactionModel(ownerId),
-    Notification: getNotificationModel(ownerId),
-    AuditLog: getAuditLogModel(ownerId)
+    Restaurant: getRestaurantModel(cleanId),
+    Manager: getManagerModel(cleanId),
+    Employee: getEmployeeModel(cleanId),
+    Menu: getMenuModel(cleanId),
+    Order: getOrderModel(cleanId),
+    Customer: getCustomerModel(cleanId),
+    Table: getTableModel(cleanId),
+    Reservation: getReservationModel(cleanId),
+    Inventory: getInventoryModel(cleanId),
+    Coupon: getCouponModel(cleanId),
+    LoyaltyPoint: getLoyaltyPointModel(cleanId),
+    Transaction: getTransactionModel(cleanId),
+    Notification: getNotificationModel(cleanId),
+    AuditLog: getAuditLogModel(cleanId)
   };
 };
 
@@ -70,7 +70,8 @@ const getOwnerModels = (ownerId) => {
  * const restaurant = await RestaurantModel.findById(restaurantId);
  */
 const getOwnerModel = (ownerId, modelName) => {
-  const models = getOwnerModels(ownerId);
+  const cleanId = ownerId.replace(/^owner_/, '');
+  const models = getOwnerModels(cleanId);
   
   if (!models[modelName]) {
     throw new Error(`Model '${modelName}' not found`);

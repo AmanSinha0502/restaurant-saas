@@ -166,7 +166,6 @@ const restaurantSchema = new mongoose.Schema({
 
 // Indexes
 restaurantSchema.index({ ownerId: 1, status: 1 });
-restaurantSchema.index({ slug: 1 }, { unique: true });
 
 // Generate slug from name
 restaurantSchema.pre('save', function(next) {

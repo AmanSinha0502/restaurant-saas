@@ -12,6 +12,10 @@ const menuRoutes = require('./menuRoutes');
 const orderRoutes = require('./orderRoutes');
 const tableRoutes = require('./tableRoutes');
 const reservationRoutes = require('./reservationRoutes');
+const inventoryRoutes = require('./InventoryRoutes');
+const supplierRoutes = require('./supplierRoutes');
+const customerRoutes = require('./customerRoutes');
+
 
 
 const mountRoutes = (app) => {
@@ -67,11 +71,12 @@ const mountRoutes = (app) => {
   // TODO: Add more routes as we build them
   app.use('/api/reservations', reservationRoutes);
   app.use('/api/tables', tableRoutes);
-  // app.use('/api/inventory', inventoryRoutes);
-  // app.use('/api/customers', customerRoutes);
+  app.use('/api/inventory', inventoryRoutes);
+  app.use('/api/suppliers', supplierRoutes);
+  app.use('/api/customers', customerRoutes);
   // app.use('/api/coupons', couponRoutes);
   // app.use('/api/reports', reportRoutes);
-  
+
   // Serve uploaded files
   app.use('/uploads', express.static('uploads'));
 };

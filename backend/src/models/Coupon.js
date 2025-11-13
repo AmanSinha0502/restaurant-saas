@@ -152,7 +152,6 @@ const couponSchema = new mongoose.Schema({
 
 // Indexes
 couponSchema.index({ ownerId: 1, isActive: 1 });
-couponSchema.index({ code: 1 }, { unique: true });
 couponSchema.index({ validFrom: 1, validUntil: 1 });
 
 // Method to validate coupon

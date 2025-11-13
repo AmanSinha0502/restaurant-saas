@@ -175,7 +175,6 @@ const reservationSchema = new mongoose.Schema({
 // Indexes
 reservationSchema.index({ restaurantId: 1, reservationDate: 1, status: 1 });
 reservationSchema.index({ 'customer.userId': 1, createdAt: -1 });
-reservationSchema.index({ reservationNumber: 1 }, { unique: true });
 reservationSchema.index({ 'table.tableId': 1, reservationDate: 1 });
 
 // Pre-save: Generate reservation number
@@ -213,8 +212,9 @@ reservationSchema.methods.updateStatus = function(newStatus, updatedBy, note = n
 
 // Method to auto-assign table
 reservationSchema.methods.autoAssignTable = async function() {
-  const Table = mongoose.model('Table');
-  
+  // Resolve Table model from the same owner DB connection as this reservation
+  const Table = this.constructor.db.model('Table');
+
   // Find suitable tables
   const suitableTables = await Table.findSuitableTables(
     this.restaurantId,
@@ -245,7 +245,8 @@ reservationSchema.methods.autoAssignTable = async function() {
 
 // Method to manually assign table
 reservationSchema.methods.manualAssignTable = async function(tableId) {
-  const Table = mongoose.model('Table');
+  // Resolve Table model from the same owner DB connection as this reservation
+  const Table = this.constructor.db.model('Table');
   const table = await Table.findById(tableId);
   
   if (!table) {

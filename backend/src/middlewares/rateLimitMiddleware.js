@@ -10,6 +10,9 @@ class RedisStore {
   constructor(options = {}) {
     this.prefix = options.prefix || 'rl:';
     this.resetExpiryOnChange = options.resetExpiryOnChange || false;
+    // windowMs in milliseconds; default to 60s
+    this.windowMs = options.windowMs || 60 * 1000;
+    this.expirySeconds = Math.max(1, Math.ceil(this.windowMs / 1000));
   }
 
   async increment(key) {
@@ -19,11 +22,13 @@ class RedisStore {
       const current = await redis.incr(redisKey);
 
       if (current === 1) {
-        // First request, set expiry
-        await redis.expire(redisKey, 60); // 1 minute default
+        // First request, set expiry according to configured window
+        await redis.expire(redisKey, this.expirySeconds);
       }
 
-      const ttl = await redis.ttl(redisKey);
+      let ttl = await redis.ttl(redisKey);
+      // if ttl is -1 (no expiry) or -2 (key doesn't exist), fallback to expirySeconds
+      if (typeof ttl !== 'number' || ttl < 0) ttl = this.expirySeconds;
 
       return {
         totalHits: current,
@@ -41,7 +46,6 @@ class RedisStore {
 
   async decrement(key) {
     const redisKey = this.prefix + key;
-
     try {
       await redis.decr(redisKey);
     } catch (error) {
@@ -51,7 +55,6 @@ class RedisStore {
 
   async resetKey(key) {
     const redisKey = this.prefix + key;
-
     try {
       await redis.del(redisKey);
     } catch (error) {
@@ -74,13 +77,15 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   // Use Redis if available
-  store: process.env.REDIS_HOST ? new RedisStore({ prefix: 'rl:api:' }) : undefined,
+  store: process.env.REDIS_HOST
+    ? new RedisStore({ prefix: 'rl:api:', windowMs: 15 * 60 * 1000 })
+    : undefined,
   handler: (req, res) => {
     logger.warn(`Rate limit exceeded for IP: ${req.ip}`);
     res.status(429).json({
       success: false,
       message: 'Too many requests. Please try again later.',
-      retryAfter: Math.ceil(req.rateLimit.resetTime.getTime() - Date.now()) / 1000
+      retryAfter: Math.ceil((req.rateLimit.resetTime.getTime() - Date.now()) / 1000)
     });
   }
 });
@@ -103,7 +108,7 @@ const authLimiter = rateLimit({
     res.status(429).json({
       success: false,
       message: 'Too many login attempts. Please try again after 15 minutes.',
-      retryAfter: Math.ceil(req.rateLimit.resetTime.getTime() - Date.now()) / 1000
+      retryAfter: Math.ceil((req.rateLimit.resetTime.getTime() - Date.now()) / 1000)
     });
   }
 });
@@ -123,7 +128,7 @@ const orderLimiter = rateLimit({
     success: false,
     message: 'Too many orders placed. Please try again in a few minutes.'
   },
-  store: process.env.REDIS_HOST ? new RedisStore({ prefix: 'rl:order:' }) : undefined
+  store: process.env.REDIS_HOST ? new RedisStore({ prefix: 'rl:order:', windowMs: 5 * 60 * 1000 }) : undefined
 });
 
 /**
@@ -178,9 +183,9 @@ const createRateLimiter = (options = {}) => {
       success: false,
       message
     },
-    keyGenerator: keyGenerator || ((req) => ipKeyGenerator(req)),
+  keyGenerator: keyGenerator || ((req) => ipKeyGenerator(req)),
     skipSuccessfulRequests,
-    store: process.env.REDIS_HOST ? new RedisStore({ prefix }) : undefined,
+  store: process.env.REDIS_HOST ? new RedisStore({ prefix, windowMs }) : undefined,
     standardHeaders: true,
     legacyHeaders: false
   });
@@ -210,13 +215,14 @@ const roleBasedLimiter = (limits = {}) => {
       max: roleLimit.max,
       // keyGenerator: (req) => `${req.user?.id || req.ip}:${userRole}`,
       keyGenerator: (req) => {
-        return `${req.user?.id || ipKeyGenerator(req)}:${userRole}`;
+        const ip = ipKeyGenerator(req);
+        return `${req.user?.id || ip}:${userRole}`;
       },
       message: {
         success: false,
         message: `Rate limit exceeded for ${userRole}. Please try again later.`
       },
-      store: process.env.REDIS_HOST ? new RedisStore({ prefix: `rl:role:${userRole}:` }) : undefined
+      store: process.env.REDIS_HOST ? new RedisStore({ prefix: `rl:role:${userRole}:`, windowMs: roleLimit.windowMs }) : undefined
     });
 
     return limiter(req, res, next);
@@ -241,10 +247,11 @@ const conditionalLimiter = (condition, limiter) => {
  */
 const bypassForWhitelist = (whitelist = []) => {
   return (req, res, next) => {
-    if (whitelist.includes(req.ip)) {
+    const remoteIp = ipKeyGenerator(req);
+    if (whitelist.includes(remoteIp)) {
       return next();
     }
-    next();
+    return next();
   };
 };
 

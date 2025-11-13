@@ -18,7 +18,7 @@ const server = http.createServer(app);
 // Initialize Socket.io
 const io = new Server(server, {
   cors: {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
     credentials: true
   }
 });
@@ -32,7 +32,7 @@ app.use(helmet());
 
 // CORS
 app.use(cors({
-  origin: process.env.CORS_ORIGIN?.split(',') || 'http://localhost:3000',
+  origin: process.env.CORS_ORIGIN?.split(',') || 'http://localhost:5173',
   credentials: true
 }));
 

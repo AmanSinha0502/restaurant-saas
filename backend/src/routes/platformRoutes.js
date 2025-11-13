@@ -13,7 +13,7 @@ const {
   resetOwnerPassword,
   getPlatformStats
 } = require('../controllers/platformAdminController');
-
+const { getCurrentUser } = require('../controllers/authController'); 
 // Middlewares
 const {
   authenticate,
@@ -41,6 +41,9 @@ const { adminLoginSchema } = require('../validators/authValidator');
  * @desc    Platform admin login
  * @access  Public
  */
+
+router.get('/me', authenticate, getCurrentUser);
+
 router.post(
   '/login',
   authLimiter,

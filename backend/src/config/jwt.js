@@ -42,7 +42,8 @@ const verifyRefreshToken = (token) => {
 // Generate token pair (access + refresh)
 const generateTokenPair = (payload) => {
   const accessToken = generateAccessToken(payload);
-  const refreshToken = generateRefreshToken({ userId: payload.userId });
+  // Include minimal claims in refresh token so refresh handler can issue a proper access token
+  const refreshToken = generateRefreshToken({ userId: payload.userId, role: payload.role, ownerId: payload.ownerId });
   
   return {
     accessToken,

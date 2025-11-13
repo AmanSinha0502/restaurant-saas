@@ -117,9 +117,9 @@ tableSchema.methods.isAvailableAt = async function(date, timeSlot, diningDuratio
     return false;
   }
   
-  // Check for overlapping reservations
-  const Reservation = mongoose.model('Reservation');
-  
+  // Check for overlapping reservations using the Reservation model from the same owner DB
+  const Reservation = this.constructor.db.model('Reservation');
+
   const requestedStart = new Date(`${date} ${timeSlot}`);
   const requestedEnd = new Date(requestedStart.getTime() + diningDuration * 60 * 1000);
   

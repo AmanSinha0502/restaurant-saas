@@ -621,9 +621,7 @@ const orderSchema = new mongoose.Schema({
 
 orderSchema.index({ restaurantId: 1, status: 1, createdAt: -1 });
 orderSchema.index({ 'customer.phone': 1 });
-orderSchema.index({ orderNumber: 1 });
 orderSchema.index({ createdAt: -1 });
-orderSchema.index({ 'payment.status': 1 });
 
 // ============================================
 // VIRTUALS
@@ -798,4 +796,11 @@ orderSchema.query.byDateRange = function(startDate, endDate) {
   return this.where('createdAt').gte(startDate).lte(endDate);
 };
 
-module.exports = mongoose.model('Order', orderSchema);
+// Getter to obtain the Order model bound to an owner-specific database
+const getOrderModel = (ownerId) => {
+  const dbName = `owner_${ownerId}`;
+  const connection = mongoose.connection.useDb(dbName, { useCache: true });
+  return connection.model('Order', orderSchema);
+};
+
+module.exports = { orderSchema, getOrderModel };

@@ -109,7 +109,6 @@ const notificationSchema = new mongoose.Schema({
 // Indexes
 notificationSchema.index({ restaurantId: 1, type: 1, createdAt: -1 });
 notificationSchema.index({ 'recipient.userId': 1, createdAt: -1 });
-notificationSchema.index({ status: 1 });
 notificationSchema.index({ template: 1 });
 
 // Method to mark as sent

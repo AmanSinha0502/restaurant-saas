@@ -1,7 +1,6 @@
 const { verifyAccessToken } = require('../config/jwt');
 const ResponseHelper = require('../utils/responseHelper');
 const { PlatformAdmin, Owner, getOwnerModel } = require('../models');
-// const { PlatformAdmin, Owner, getOwnerModel } = require('../models/Index');
 const logger = require('../utils/logger');
 
 /**

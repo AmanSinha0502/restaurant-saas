@@ -1,4 +1,5 @@
 const { PlatformAdmin, Owner } = require('../models');
+const mongoose = require('mongoose');
 const { generateTokenPair } = require('../config/jwt');
 const ResponseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
@@ -76,35 +77,61 @@ const createOwner = async (req, res) => {
     
     // Check if owner already exists
     const existingOwner = await Owner.findOne({ email });
-    
     if (existingOwner) {
       return ResponseHelper.error(res, 400, 'Owner with this email already exists');
     }
     
-    // Generate unique owner ID for database naming
-    const ownerId = `owner_${crypto.randomBytes(8).toString('hex')}`;
-    
-    // Create owner
+    // Create owner document (let mongoose generate _id)
     const owner = await Owner.create({
-      ownerId: ownerId,
+      // Do NOT create a custom ownerId string here
       fullName,
       email,
       phone,
       password,
       isFirstLogin: true,
       createdBy: req.user.id,
-      ownedDatabases: [`owner_${ownerId}`]
+      ownedDatabases: []
     });
-    
+
+    // Use the Owner's ObjectId string as canonical ownerId
+    const canonicalOwnerId = owner._id.toString(); // <-- important
+
+    // Build DB name using single `owner_` prefix and the ObjectId
+    const dbName = `owner_${canonicalOwnerId}`;
+
+    // Save dbName into ownedDatabases
+    owner.ownerId = canonicalOwnerId; // optional: store canonical ownerId field
+    owner.ownedDatabases = [dbName];
+    await owner.save();
+
+    // OPTIONAL: create/initialize owner DB and seed default documents
+    const { connectOwnerDB } = require('../config/database');
+    const ownerDb = connectOwnerDB(canonicalOwnerId); // returns a Db connection (useDb)
+    // create default collections/documents if desired:
+    try {
+      // Example: create a default "Settings" doc for the owner
+      const SettingsSchema = new mongoose.Schema({
+        key: String, value: mongoose.Schema.Types.Mixed
+      }, { collection: 'settings' });
+      // Register model on owner DB
+      ownerDb.model('Settings', SettingsSchema);
+      // Insert default settings if not present
+      const Settings = ownerDb.model('Settings');
+      const existing = await Settings.findOne({ key: 'default' }).lean();
+      if (!existing) {
+        await Settings.create({ key: 'default', value: { currency: 'INR', language: 'en' } });
+      }
+    } catch (err) {
+      // don't crash owner creation if seeding fails; just log
+      logger.warn('Owner DB seed warning:', err.message);
+    }
+
     logger.info(`Owner created by platform admin: ${owner._id}`);
-    
-    // Log audit
-    // TODO: Create audit log entry
-    
+
     return ResponseHelper.created(res, 'Restaurant owner created successfully', {
       owner: {
         id: owner._id,
-        ownerId: owner.ownerId,
+        ownerId: canonicalOwnerId,
         fullName: owner.fullName,
         email: owner.email,
         phone: owner.phone,

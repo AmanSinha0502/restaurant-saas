@@ -330,6 +330,57 @@ const updateOrderStatus = async (req, res) => {
     await order.updateStatus(status, req.user.id, req.user.role, note);
     logger.info(`Order ${order.orderNumber} status updated to ${status}`);
 
+    if (order.status === 'completed' && order.customer.userId) {
+      const models = getOwnerModels(req.ownerId);
+      const Customer = models.Customer;
+      const LoyaltyTransaction = models.LoyaltyTransaction;
+
+      const customer = await Customer.findById(order.customer.userId);
+
+      if (customer) {
+        // Calculate points (₹100 = 10 points)
+        const points = Math.floor(order.pricing.total / 100) * 10;
+
+        await customer.awardPoints(points, `Order ${order.orderNumber}`);
+
+        // Log transaction
+        await LoyaltyTransaction.create({
+          restaurantId: order.restaurantId,
+          customerId: customer._id,
+          type: 'earned',
+          points,
+          previousBalance: customer.loyalty.points - points,
+          newBalance: customer.loyalty.points,
+          source: 'order',
+          description: `Points earned from order ${order.orderNumber}`,
+          relatedOrder: order._id,
+          expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+          createdByModel: 'System'
+        });
+
+        // Update statistics
+        customer.statistics.totalOrders += 1;
+        customer.statistics.completedOrders += 1;
+        customer.statistics.totalSpent += order.pricing.total;
+        customer.statistics.averageOrderValue =
+          customer.statistics.totalSpent / customer.statistics.completedOrders;
+        customer.statistics.lastOrderDate = new Date();
+
+        if (!customer.statistics.firstOrderDate) {
+          customer.statistics.firstOrderDate = new Date();
+        }
+
+        // Update tier
+        customer.updateLoyaltyTier();
+
+        // Calculate RFM
+        customer.calculateRFMScore();
+
+        await customer.save();
+      }
+    }
+
+
     if (status === 'completed' && order.orderType === 'dine-in' && order.tableDetails?.tableId) {
       const Table = models.Table;
       const table = await Table.findById(order.tableDetails.tableId);
