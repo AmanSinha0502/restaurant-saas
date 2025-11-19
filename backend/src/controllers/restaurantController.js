@@ -1,7 +1,8 @@
-const { getOwnerModels } = require('../models');
 const ResponseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
-
+const { PlatformAdmin, Owner, getOwnerModel } = require('../models');
+const { generateTokenPair } = require('../config/jwt');
+const crypto = require('crypto');
 /**
  * Create Restaurant/Branch (First-time setup or add new branch)
  * POST /api/restaurants
@@ -20,7 +21,7 @@ const createRestaurant = async (req, res) => {
       defaultLanguage
     } = req.body;
     
-    const models = getOwnerModels(req.ownerId);
+    const models = getOwnerModel(req.ownerId);
     const Restaurant = models.Restaurant;
     
     // Auto-generate slug from name
@@ -116,7 +117,7 @@ const getAllRestaurants = async (req, res) => {
   try {
     const { status, search } = req.query;
     
-    const models = getOwnerModels(req.ownerId);
+    const models = getOwnerModel(req.ownerId);
     const Restaurant = models.Restaurant;
     
     // Build query
@@ -166,7 +167,7 @@ const getRestaurantById = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const models = getOwnerModels(req.ownerId);
+    const models = getOwnerModel(req.ownerId);
     const Restaurant = models.Restaurant;
     
     const restaurant = await Restaurant.findOne({
@@ -215,7 +216,7 @@ const updateRestaurant = async (req, res) => {
     const { id } = req.params;
     const updateData = req.body;
     
-    const models = getOwnerModels(req.ownerId);
+    const models = getOwnerModel(req.ownerId);
     const Restaurant = models.Restaurant;
     
     const restaurant = await Restaurant.findOne({
@@ -281,7 +282,7 @@ const updateRestaurantStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     
-    const models = getOwnerModels(req.ownerId);
+    const models = getOwnerModel(req.ownerId);
     const Restaurant = models.Restaurant;
     
     const restaurant = await Restaurant.findOne({
@@ -319,7 +320,7 @@ const deleteRestaurant = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const models = getOwnerModels(req.ownerId);
+    const models = getOwnerModel(req.ownerId);
     const Restaurant = models.Restaurant;
     
     const restaurant = await Restaurant.findOne({
@@ -353,7 +354,7 @@ const getRestaurantDashboard = async (req, res) => {
     const { id } = req.params;
     const { period = 'today' } = req.query; // today, week, month, year
     
-    const models = getOwnerModels(req.ownerId);
+    const models = getOwnerModel(req.ownerId);
     const Restaurant = models.Restaurant;
     const Order = models.Order;
     const Reservation = models.Reservation;
@@ -459,7 +460,7 @@ const getCumulativeDashboard = async (req, res) => {
   try {
     const { period = 'today' } = req.query;
     
-    const models = getOwnerModels(req.ownerId);
+    const models = getOwnerModel(req.ownerId);
     const Restaurant = models.Restaurant;
     const Order = models.Order;
     const Customer = models.Customer;
@@ -558,7 +559,409 @@ const getCumulativeDashboard = async (req, res) => {
   }
 };
 
+
+
+
+// ===============================
+// AUTH CONTROLLER (PATCHED)
+// ===============================
+
+/**
+ * ===============================
+ * CUSTOMER AUTH
+ * ===============================
+ */
+
+// REGISTER CUSTOMER
+const customerRegister = async (req, res) => {
+  try {
+    const { fullName, email, phone, password, restaurantId } = req.body;
+
+    const ownerId = req.ownerId;   // PATCH ✔
+    if (!ownerId) {
+      return ResponseHelper.error(res, 400, "Tenant not detected");
+    }
+
+    const Customer = getOwnerModel(ownerId, "Customer");
+
+    const existingCustomer = await Customer.findOne({
+      restaurantId,
+      $or: [{ email }, { phone }]
+    });
+
+    if (existingCustomer) {
+      return ResponseHelper.error(res, 400, "Customer already exists");
+    }
+
+    const customer = await Customer.create({
+      restaurantId,
+      fullName,
+      email,
+      phone,
+      password
+    });
+
+    const tokens = generateTokenPair({
+      userId: customer._id,
+      role: "customer",
+      ownerId
+    });
+
+    res.cookie("refreshToken", tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    return ResponseHelper.created(res, "Registration successful", {
+      accessToken: tokens.accessToken,
+      user: {
+        id: customer._id,
+        fullName: customer.fullName,
+        email: customer.email,
+        phone: customer.phone,
+        role: "customer",
+        restaurantId: customer.restaurantId
+      }
+    });
+
+  } catch (error) {
+    logger.error("Customer registration error:", error);
+    return ResponseHelper.error(res, 500, "Registration failed");
+  }
+};
+
+
+// CUSTOMER LOGIN
+const customerLogin = async (req, res) => {
+  try {
+    const { email, password, restaurantId } = req.body;
+
+    const ownerId = req.ownerId;   // PATCH ✔
+    if (!ownerId) {
+      return ResponseHelper.error(res, 400, "Tenant not detected");
+    }
+
+    const Customer = getOwnerModel(ownerId, "Customer");
+
+    const customer = await Customer.findOne({ email, restaurantId }).select("+password");
+    if (!customer) return ResponseHelper.unauthorized(res, "Invalid email or password");
+
+    if (!customer.isActive)
+      return ResponseHelper.forbidden(res, "Your account has been deactivated");
+
+    if (customer.isBlocked)
+      return ResponseHelper.forbidden(res, "Your account has been blocked");
+
+    const valid = await customer.comparePassword(password);
+    if (!valid) return ResponseHelper.unauthorized(res, "Invalid email or password");
+
+    const tokens = generateTokenPair({
+      userId: customer._id,
+      role: "customer",
+      ownerId
+    });
+
+    res.cookie("refreshToken", tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    return ResponseHelper.success(res, 200, "Login successful", {
+      accessToken: tokens.accessToken,
+      user: {
+        id: customer._id,
+        fullName: customer.fullName,
+        email: customer.email,
+        phone: customer.phone,
+        role: "customer",
+        restaurantId: customer.restaurantId,
+        loyaltyPoints: customer.loyaltyPoints,
+        loyaltyTier: customer.loyaltyTier
+      }
+    });
+
+  } catch (error) {
+    logger.error("Customer login error:", error);
+    return ResponseHelper.error(res, 500, "Login failed");
+  }
+};
+
+
+/**
+ * ===============================
+ * OWNER LOGIN (Platform Admin)
+ * ===============================
+ */
+
+const adminLogin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    let user = await Owner.findOne({ email }).select("+password");
+    if (!user) return ResponseHelper.unauthorized(res, "Invalid email or password");
+
+    const valid = await user.comparePassword(password);
+    if (!valid) return ResponseHelper.unauthorized(res, "Invalid email or password");
+
+    const ownerId = user._id.toString();
+
+    if (user.isFirstLogin) {
+      user.isFirstLogin = false;
+      user.lastLogin = new Date();
+      await user.save();
+    } else {
+      user.lastLogin = new Date();
+      await user.save();
+    }
+
+    const tokens = generateTokenPair({
+      userId: user._id,
+      role: "owner",
+      ownerId
+    });
+
+    res.cookie("refreshToken", tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    return ResponseHelper.success(res, 200, "Login successful", {
+      accessToken: tokens.accessToken,
+      user: {
+        id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+        role: "owner"
+      }
+    });
+
+  } catch (error) {
+    logger.error("Admin login error:", error);
+    return ResponseHelper.error(res, 500, "Login failed");
+  }
+};
+
+
+/**
+ * ===============================
+ * STAFF LOGIN (PATCHED)
+ * ===============================
+ */
+
+const staffLogin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const ownerId = req.ownerId;   // PATCH ✔
+    if (!ownerId) return ResponseHelper.error(res, 400, "Tenant not detected");
+
+    let user;
+    let role;
+
+    const Manager = getOwnerModel(ownerId, "Manager");
+    const Employee = getOwnerModel(ownerId, "Employee");
+
+    // Try manager first
+    user = await Manager.findOne({ email })
+      .select("+password")
+      .populate({
+        path: "assignedRestaurants",
+        model: getOwnerModel(ownerId, "Restaurant") // PATCH ✔
+      });
+
+    if (user) {
+      role = "manager";
+    } else {
+      user = await Employee.findOne({ email }).select("+password");
+      if (user) role = "employee";
+    }
+
+    if (!user) return ResponseHelper.unauthorized(res, "Invalid email or password");
+
+    if (!user.isActive)
+      return ResponseHelper.forbidden(res, "Your account has been deactivated");
+
+    const valid = await user.comparePassword(password);
+    if (!valid) return ResponseHelper.unauthorized(res, "Invalid email or password");
+
+    user.lastLogin = new Date();
+    await user.save();
+
+    const tokens = generateTokenPair({
+      userId: user._id,
+      role,
+      ownerId
+    });
+
+    res.cookie("refreshToken", tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    return ResponseHelper.success(res, 200, "Login successful", {
+      accessToken: tokens.accessToken,
+      user: {
+        id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+        phone: user.phone,
+        role,
+        ...(role === "manager"
+          ? { assignedRestaurants: user.assignedRestaurants }
+          : {
+              restaurantId: user.restaurantId,
+              employeeType: user.employeeType,
+              permissions: user.permissions
+            })
+      }
+    });
+
+  } catch (error) {
+    logger.error("Staff login error:", error);
+    return ResponseHelper.error(res, 500, "Login failed");
+  }
+};
+
+
+/**
+ * ===============================
+ * LOGOUT
+ * ===============================
+ */
+
+const logout = async (req, res) => {
+  try {
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict"
+    });
+
+    return ResponseHelper.success(res, 200, "Logout successful");
+  } catch (error) {
+    return ResponseHelper.error(res, 500, "Failed to logout");
+  }
+};
+
+
+/**
+ * ===============================
+ * CUSTOMER PASSWORD RESET (PATCHED)
+ * ===============================
+ */
+
+const customerForgotPassword = async (req, res) => {
+  try {
+    const { email, restaurantId } = req.body;
+
+    const ownerId = req.ownerId;  // PATCH ✔
+
+    const Customer = getOwnerModel(ownerId, "Customer");
+
+    const customer = await Customer.findOne({ email, restaurantId });
+
+    if (!customer) {
+      return ResponseHelper.success(res, 200, "If account exists, reset mail sent");
+    }
+
+    const resetToken = customer.generateResetToken();
+    await customer.save();
+
+    return ResponseHelper.success(res, 200, "Password reset link sent");
+
+  } catch (error) {
+    logger.error("Forgot password error:", error);
+    return ResponseHelper.error(res, 500, "Failed process");
+  }
+};
+
+
+const customerResetPassword = async (req, res) => {
+  try {
+    const { token, newPassword, restaurantId } = req.body;
+
+    const ownerId = req.ownerId; // PATCH ✔
+
+    const hashed = crypto.createHash("sha256").update(token).digest("hex");
+
+    const Customer = getOwnerModel(ownerId, "Customer");
+
+    const customer = await Customer.findOne({
+      restaurantId,
+      resetPasswordToken: hashed,
+      resetPasswordExpire: { $gt: Date.now() }
+    });
+
+    if (!customer) {
+      return ResponseHelper.error(res, 400, "Invalid or expired token");
+    }
+
+    customer.password = newPassword;
+    customer.resetPasswordToken = undefined;
+    customer.resetPasswordExpire = undefined;
+    await customer.save();
+
+    return ResponseHelper.success(res, 200, "Password reset successful");
+
+  } catch (error) {
+    logger.error("Reset password error:", error);
+    return ResponseHelper.error(res, 500, "Reset failed");
+  }
+};
+
+
+/**
+ * ===============================
+ * CHANGE PASSWORD
+ * ===============================
+ */
+
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const { id, role } = req.user;
+
+    let Model;
+
+    if (role === "owner") Model = Owner;
+    else Model = getOwnerModel(req.ownerId, role.charAt(0).toUpperCase() + role.slice(1));
+
+    const user = await Model.findById(id).select("+password");
+    if (!user) return ResponseHelper.notFound(res, "User not found");
+
+    const valid = await user.comparePassword(currentPassword);
+    if (!valid)
+      return ResponseHelper.error(res, 400, "Current password incorrect");
+
+    user.password = newPassword;
+    await user.save();
+
+    return ResponseHelper.success(res, 200, "Password changed");
+
+  } catch (error) {
+    logger.error("Change password error:", error);
+    return ResponseHelper.error(res, 500, "Failed to change password");
+  }
+};
+
+
 module.exports = {
+  customerRegister,
+  customerLogin,
+  adminLogin,
+  staffLogin,
+  logout,
+  customerForgotPassword,
+  customerResetPassword,
+  changePassword,
   createRestaurant,
   getAllRestaurants,
   getRestaurantById,

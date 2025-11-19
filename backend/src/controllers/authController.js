@@ -14,27 +14,37 @@ const crypto = require('crypto');
  */
 const customerRegister = async (req, res) => {
   try {
-    const { fullName, email, phone, password, restaurantId } = req.body;
-    
-    // Get Customer model for specific restaurant
-    const ownerId = req.body.ownerId; // Will be passed from frontend based on restaurant
-    
-    if (!ownerId) {
-      return ResponseHelper.error(res, 400, 'Restaurant owner ID is required');
-    }
-    
-    const Customer = getOwnerModel(ownerId, 'Customer');
-    
-    // Check if customer already exists
-    const existingCustomer = await Customer.findOne({
-      restaurantId,
-      $or: [{ email }, { phone }]
-    });
-    
+const { fullName, email, phone, password, restaurantId } = req.body;
+
+const ownerId = req.ownerId;
+if (!ownerId) {
+  return ResponseHelper.error(res, 400, 'Tenant not detected');
+}
+
+const models = getOwnerModels(req.ownerId);
+const Customer = models.Customer;
+const Restaurant = models.Restaurant;
+
+// Verify restaurant belongs to this owner
+const restaurant = await Restaurant.findOne({
+  _id: restaurantId,
+  ownerId
+});
+if (!restaurant) {
+  return ResponseHelper.error(res, 400, 'Invalid restaurant for this tenant');
+}
+
+// Check if customer already exists for this restaurant
+const existingCustomer = await Customer.findOne({
+  restaurantId,
+  $or: [{ email }, { phone }]
+});
+
+
     if (existingCustomer) {
       return ResponseHelper.error(res, 400, 'Customer with this email or phone already exists');
     }
-    
+
     // Create customer
     const customer = await Customer.create({
       restaurantId,
@@ -43,14 +53,14 @@ const customerRegister = async (req, res) => {
       phone,
       password
     });
-    
+
     // Generate tokens
     const tokens = generateTokenPair({
       userId: customer._id,
       role: 'customer',
       ownerId
     });
-    
+
     // Set refresh token in httpOnly cookie
     res.cookie('refreshToken', tokens.refreshToken, {
       httpOnly: true,
@@ -58,9 +68,9 @@ const customerRegister = async (req, res) => {
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
-    
+
     logger.info(`Customer registered: ${customer._id}`);
-    
+
     return ResponseHelper.created(res, 'Registration successful', {
       accessToken: tokens.accessToken,
       user: {
@@ -84,45 +94,60 @@ const customerRegister = async (req, res) => {
  */
 const customerLogin = async (req, res) => {
   try {
-    const { email, password, restaurantId, ownerId } = req.body;
-    
-    if (!ownerId) {
-      return ResponseHelper.error(res, 400, 'Restaurant owner ID is required');
-    }
-    
-    const Customer = getOwnerModel(ownerId, 'Customer');
-    
-    // Find customer with password field
-    const customer = await Customer.findOne({ email, restaurantId }).select('+password');
-    
+const { email, password, restaurantId } = req.body;
+
+const ownerId = req.ownerId;
+if (!ownerId) {
+  return ResponseHelper.error(res, 400, 'Tenant not detected');
+}
+
+const models = getOwnerModels(req.ownerId);
+const Customer = models.Customer;
+const Restaurant = models.Restaurant;
+
+// Verify restaurant belongs to the owner
+const restaurant = await Restaurant.findOne({
+  _id: restaurantId,
+  ownerId
+});
+if (!restaurant) {
+  return ResponseHelper.error(res, 400, 'Invalid restaurant');
+}
+
+const customer = await Customer.findOne({
+  email,
+  restaurantId
+}).select('+password');
+
+
     if (!customer) {
       return ResponseHelper.unauthorized(res, 'Invalid email or password');
     }
-    
+
     // Check if account is active
     if (!customer.isActive) {
       return ResponseHelper.forbidden(res, 'Your account has been deactivated');
     }
-    
+
     // Check if account is blocked
     if (customer.isBlocked) {
       return ResponseHelper.forbidden(res, 'Your account has been blocked. Please contact support.');
     }
-    
+
     // Verify password
     const isPasswordValid = await customer.comparePassword(password);
-    
+
     if (!isPasswordValid) {
       return ResponseHelper.unauthorized(res, 'Invalid email or password');
     }
-    
+
     // Generate tokens
     const tokens = generateTokenPair({
       userId: customer._id,
       role: 'customer',
       ownerId
     });
-    
+
     // Set refresh token in httpOnly cookie
     res.cookie('refreshToken', tokens.refreshToken, {
       httpOnly: true,
@@ -130,9 +155,9 @@ const customerLogin = async (req, res) => {
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
-    
+
     logger.info(`Customer logged in: ${customer._id}`);
-    
+
     return ResponseHelper.success(res, 200, 'Login successful', {
       accessToken: tokens.accessToken,
       user: {
@@ -163,15 +188,15 @@ const customerLogin = async (req, res) => {
 const adminLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
-    
+
     let user;
     let role;
     let ownerId;
     let additionalData = {};
-    
+
     // Try to find user in Owner collection first
     user = await Owner.findOne({ email }).select('+password');
-    
+
     if (user) {
       role = 'owner';
       ownerId = user._id.toString();
@@ -180,42 +205,42 @@ const adminLogin = async (req, res) => {
       // This is a simplified approach - in production, you might want to optimize this
       return ResponseHelper.error(res, 400, 'Please provide owner ID for staff login');
     }
-    
+
     if (!user) {
       return ResponseHelper.unauthorized(res, 'Invalid email or password');
     }
-    
+
     // Check if account is active
     if (!user.isActive) {
       return ResponseHelper.forbidden(res, 'Your account has been deactivated');
     }
-    
+
     // Verify password
     const isPasswordValid = await user.comparePassword(password);
-    
+
     if (!isPasswordValid) {
       return ResponseHelper.unauthorized(res, 'Invalid email or password');
     }
-    
+
     // For first-time owner login, mark as not first login after this
     if (role === 'owner' && user.isFirstLogin) {
       user.isFirstLogin = false;
       user.lastLogin = new Date();
       await user.save();
-      
+
       additionalData.isFirstLogin = true;
     } else {
       user.lastLogin = new Date();
       await user.save();
     }
-    
+
     // Generate tokens
     const tokens = generateTokenPair({
       userId: user._id,
       role,
       ownerId
     });
-    
+
     // Set refresh token in httpOnly cookie
     res.cookie('refreshToken', tokens.refreshToken, {
       httpOnly: true,
@@ -223,9 +248,9 @@ const adminLogin = async (req, res) => {
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
-    
+
     logger.info(`${role} logged in: ${user._id}`);
-    
+
     return ResponseHelper.success(res, 200, 'Login successful', {
       accessToken: tokens.accessToken,
       user: {
@@ -248,20 +273,24 @@ const adminLogin = async (req, res) => {
  */
 const staffLogin = async (req, res) => {
   try {
-    const { email, password, ownerId } = req.body;
-    
+    const { email, password } = req.body;
+    const ownerId = req.ownerId;
     if (!ownerId) {
-      return ResponseHelper.error(res, 400, 'Owner ID is required for staff login');
+      return ResponseHelper.error(res, 400, 'Owner ID not detected');
     }
-    
+
     let user;
     let role;
     let additionalData = {};
-    
+
     // Try Manager first
     const Manager = getOwnerModel(ownerId, 'Manager');
-    user = await Manager.findOne({ email }).select('+password').populate('assignedRestaurants');
-    
+    user = await Manager.findOne({ email }).select('+password').populate({
+      path: "assignedRestaurants",
+      model: getOwnerModel(ownerId, 'Restaurant')
+    });
+
+
     if (user) {
       role = 'manager';
       additionalData.assignedRestaurants = user.assignedRestaurants;
@@ -269,7 +298,7 @@ const staffLogin = async (req, res) => {
       // Try Employee
       const Employee = getOwnerModel(ownerId, 'Employee');
       user = await Employee.findOne({ email }).select('+password');
-      
+
       if (user) {
         role = 'employee';
         additionalData.restaurantId = user.restaurantId;
@@ -277,34 +306,34 @@ const staffLogin = async (req, res) => {
         additionalData.permissions = user.permissions;
       }
     }
-    
+
     if (!user) {
       return ResponseHelper.unauthorized(res, 'Invalid email or password');
     }
-    
+
     // Check if account is active
     if (!user.isActive) {
       return ResponseHelper.forbidden(res, 'Your account has been deactivated');
     }
-    
+
     // Verify password
     const isPasswordValid = await user.comparePassword(password);
-    
+
     if (!isPasswordValid) {
       return ResponseHelper.unauthorized(res, 'Invalid email or password');
     }
-    
+
     // Update last login
     user.lastLogin = new Date();
     await user.save();
-    
+
     // Generate tokens
     const tokens = generateTokenPair({
       userId: user._id,
       role,
       ownerId
     });
-    
+
     // Set refresh token in httpOnly cookie
     res.cookie('refreshToken', tokens.refreshToken, {
       httpOnly: true,
@@ -312,9 +341,9 @@ const staffLogin = async (req, res) => {
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
-    
+
     logger.info(`${role} logged in: ${user._id}`);
-    
+
     return ResponseHelper.success(res, 200, 'Login successful', {
       accessToken: tokens.accessToken,
       user: {
@@ -348,9 +377,9 @@ const logout = async (req, res) => {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict'
     });
-    
+
     logger.info(`User logged out: ${req.user?.id}`);
-    
+
     return ResponseHelper.success(res, 200, 'Logout successful');
   } catch (error) {
     logger.error('Logout error:', error);
@@ -384,26 +413,40 @@ const getCurrentUser = async (req, res) => {
  */
 const customerForgotPassword = async (req, res) => {
   try {
-    const { email, restaurantId, ownerId } = req.body;
-    
-    const Customer = getOwnerModel(ownerId, 'Customer');
-    const customer = await Customer.findOne({ email, restaurantId });
-    
+const { email, restaurantId } = req.body;
+const ownerId = req.ownerId;
+
+const models = getOwnerModels(req.ownerId);
+const Customer = models.Customer;
+const Restaurant = models.Restaurant;
+
+// Verify restaurant belongs to this tenant
+const restaurant = await Restaurant.findOne({
+  _id: restaurantId,
+  ownerId
+});
+if (!restaurant) {
+  return ResponseHelper.success(res, 200, 'If an account exists, a reset link will be sent');
+}
+
+const customer = await Customer.findOne({ email, restaurantId });
+
+
     if (!customer) {
       // Don't reveal if user exists or not
       return ResponseHelper.success(res, 200, 'If an account exists, a reset link will be sent');
     }
-    
+
     // Generate reset token
     const resetToken = customer.generateResetToken();
     await customer.save();
-    
+
     // TODO: Send email with reset link
     // const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
     // await sendEmail(customer.email, 'Password Reset', resetUrl);
-    
+
     logger.info(`Password reset requested for customer: ${customer._id}`);
-    
+
     return ResponseHelper.success(res, 200, 'Password reset link sent to your email');
   } catch (error) {
     logger.error('Forgot password error:', error);
@@ -417,30 +460,41 @@ const customerForgotPassword = async (req, res) => {
  */
 const customerResetPassword = async (req, res) => {
   try {
-    const { token, newPassword, ownerId, restaurantId } = req.body;
-    
-    // Hash the token to compare with stored hash
-    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-    
-    const Customer = getOwnerModel(ownerId, 'Customer');
-    const customer = await Customer.findOne({
-      restaurantId,
-      resetPasswordToken: hashedToken,
-      resetPasswordExpire: { $gt: Date.now() }
-    });
-    
+const { token, newPassword, restaurantId } = req.body;
+const ownerId = req.ownerId;
+
+const models = getOwnerModels(req.ownerId);
+const Customer = models.Customer;
+const Restaurant = models.Restaurant;
+
+// Verify restaurant belongs to this tenant
+const restaurant = await Restaurant.findOne({
+  _id: restaurantId,
+  ownerId
+});
+if (!restaurant) {
+  return ResponseHelper.error(res, 400, 'Invalid restaurant');
+}
+
+const customer = await Customer.findOne({
+  restaurantId,
+  resetPasswordToken: hashedToken,
+  resetPasswordExpire: { $gt: Date.now() }
+});
+
+
     if (!customer) {
       return ResponseHelper.error(res, 400, 'Invalid or expired reset token');
     }
-    
+
     // Set new password
     customer.password = newPassword;
     customer.resetPasswordToken = undefined;
     customer.resetPasswordExpire = undefined;
     await customer.save();
-    
+
     logger.info(`Password reset successful for customer: ${customer._id}`);
-    
+
     return ResponseHelper.success(res, 200, 'Password reset successful. Please login with your new password.');
   } catch (error) {
     logger.error('Reset password error:', error);
@@ -456,9 +510,9 @@ const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
     const { id: userId, role } = req.user;
-    
+
     let user;
-    
+
     // Get user based on role
     if (role === 'owner') {
       user = await Owner.findById(userId).select('+password');
@@ -472,24 +526,24 @@ const changePassword = async (req, res) => {
       const Customer = getOwnerModel(req.ownerId, 'Customer');
       user = await Customer.findById(userId).select('+password');
     }
-    
+
     if (!user) {
       return ResponseHelper.notFound(res, 'User not found');
     }
-    
+
     // Verify current password
     const isPasswordValid = await user.comparePassword(currentPassword);
-    
+
     if (!isPasswordValid) {
       return ResponseHelper.error(res, 400, 'Current password is incorrect');
     }
-    
+
     // Set new password
     user.password = newPassword;
     await user.save();
-    
+
     logger.info(`Password changed for user: ${userId}`);
-    
+
     return ResponseHelper.success(res, 200, 'Password changed successfully');
   } catch (error) {
     logger.error('Change password error:', error);
@@ -501,15 +555,15 @@ module.exports = {
   // Customer Auth
   customerRegister,
   customerLogin,
-  
+
   // Admin Auth
   adminLogin,
   staffLogin,
-  
+
   // Common
   logout,
   getCurrentUser,
-  
+
   // Password Management
   customerForgotPassword,
   customerResetPassword,

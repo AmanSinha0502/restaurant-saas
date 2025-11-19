@@ -7,6 +7,8 @@ const morgan = require('morgan');
 const http = require('http');
 const { Server } = require('socket.io');
 
+const extractOwner = require('./middlewares/extractOwner');
+
 const { connectDB } = require('./config/database');
 const { redis } = require('./config/redis');
 const logger = require('./utils/logger');
@@ -48,6 +50,8 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined', { stream: logger.stream }));
 }
 
+app.use(extractOwner);
+
 // ✅ Mount all routes here
 mountRoutes(app);
 
@@ -69,10 +73,36 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Socket.io connections
-io.on('connection', (socket) => {
+io.on("connection", (socket) => {
   logger.info(`Socket connected: ${socket.id}`);
-  socket.on('disconnect', () => logger.info(`Socket disconnected: ${socket.id}`));
+
+  /**
+   * TENANT SPECIFIC ROOM JOINERS
+   * Every client must send:
+   * { ownerId, restaurantId, customerId, deliveryBoyId }
+   */
+
+  socket.on("join-restaurant", ({ ownerId, restaurantId }) => {
+    socket.join(`restaurant:${ownerId}:${restaurantId}`);
+  });
+
+  socket.on("join-kitchen", ({ ownerId, restaurantId }) => {
+    socket.join(`kitchen:${ownerId}:${restaurantId}`);
+  });
+
+  socket.on("join-pos", ({ ownerId, restaurantId }) => {
+    socket.join(`pos:${ownerId}:${restaurantId}`);
+  });
+
+  socket.on("join-customer", ({ ownerId, customerId }) => {
+    socket.join(`customer:${ownerId}:${customerId}`);
+  });
+
+  socket.on("join-delivery", ({ ownerId, deliveryBoyId }) => {
+    socket.join(`delivery:${ownerId}:${deliveryBoyId}`);
+  });
+
+  socket.on("disconnect", () => logger.info(`Socket disconnected: ${socket.id}`));
 });
 
 // Start server

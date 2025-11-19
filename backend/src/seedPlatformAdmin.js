@@ -65,7 +65,7 @@
 // seedAdmin();
 
 
-require('dotenv').config();
+require('dotenv').config({ path: '../.env' }); // <-- points to backend/.env
 const mongoose = require('mongoose');
 const { connectDB, getPlatformDB } = require('./config/database');
 

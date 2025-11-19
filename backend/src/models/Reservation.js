@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 
 const reservationSchema = new mongoose.Schema({
+  ownerId: {
+  type: String,
+  required: true,
+  index: true
+},
+
   restaurantId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Restaurant',

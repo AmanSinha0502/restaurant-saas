@@ -6,13 +6,19 @@ const restaurantSchema = new mongoose.Schema({
     required: true,
     index: true
   },
-  
+  subdomain: {
+    type: String,
+    required: true,
+    unique: true,
+    lowercase: true,
+    trim: true
+  },
   name: {
     type: String,
     required: [true, 'Restaurant name is required'],
     trim: true
   },
-  
+
   slug: {
     type: String,
     required: true,
@@ -20,49 +26,49 @@ const restaurantSchema = new mongoose.Schema({
     lowercase: true,
     trim: true
   },
-  
+
   address: {
     street: { type: String, required: true },
     city: { type: String, required: true },
     state: { type: String, required: true },
     postalCode: { type: String, required: true },
-    country: { 
-      type: String, 
+    country: {
+      type: String,
       required: true,
       enum: ['India', 'UAE', 'USA', 'UK']
     }
   },
-  
+
   phone: {
     type: String,
     required: [true, 'Phone number is required']
   },
-  
+
   email: {
     type: String,
     lowercase: true,
     trim: true
   },
-  
+
   currency: {
     type: String,
     required: true,
     enum: ['INR', 'AED', 'USD', 'EUR', 'GBP'],
     default: 'INR'
   },
-  
+
   currencySymbol: {
     type: String,
     required: true,
     default: '₹'
   },
-  
+
   defaultLanguage: {
     type: String,
     enum: ['en', 'hi', 'ar'],
     default: 'en'
   },
-  
+
   taxSettings: {
     taxType: {
       type: String,
@@ -90,7 +96,7 @@ const restaurantSchema = new mongoose.Schema({
       default: false
     }
   },
-  
+
   reservationSettings: {
     advancePaymentType: {
       type: String,
@@ -117,13 +123,13 @@ const restaurantSchema = new mongoose.Schema({
       default: 90
     }
   },
-  
+
   branding: {
     logo: { type: String },
     primaryColor: { type: String, default: '#FF6B35' },
     secondaryColor: { type: String, default: '#004E89' }
   },
-  
+
   paymentGateways: {
     razorpay: {
       enabled: { type: Boolean, default: false },
@@ -144,13 +150,13 @@ const restaurantSchema = new mongoose.Schema({
       enabled: { type: Boolean, default: true }
     }
   },
-  
+
   status: {
     type: String,
     enum: ['active', 'inactive', 'suspended'],
     default: 'active'
   },
-  
+
   operatingHours: [{
     day: {
       type: String,
@@ -168,7 +174,7 @@ const restaurantSchema = new mongoose.Schema({
 restaurantSchema.index({ ownerId: 1, status: 1 });
 
 // Generate slug from name
-restaurantSchema.pre('save', function(next) {
+restaurantSchema.pre('save', function (next) {
   if (this.isModified('name') && !this.slug) {
     this.slug = this.name
       .toLowerCase()

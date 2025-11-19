@@ -118,6 +118,7 @@ const createPOSOrder = async (req, res) => {
     
     // Create order
     const order = await Order.create({
+        ownerId: req.ownerId,
       restaurantId,
       orderNumber,
       customer: {
@@ -162,7 +163,7 @@ const createPOSOrder = async (req, res) => {
     
     // Emit to kitchen display
     const io = req.app.get('io');
-    io.to(`kitchen:${restaurantId}`).emit('order:new', {
+    io.to(`kitchen:${req.ownerId}:${restaurantId}`).emit('order:new', {
       orderId: order._id,
       orderNumber: order.orderNumber,
       orderType: order.orderType,

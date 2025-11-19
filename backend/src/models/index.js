@@ -22,7 +22,6 @@ const { loyaltyPointSchema, getLoyaltyPointModel } = require('./LoyaltyPoint');
 const { transactionSchema, getTransactionModel } = require('./Transaction');
 const { notificationSchema, getNotificationModel } = require('./Notification');
 const { auditLogSchema, getAuditLogModel } = require('./AuditLog');
-
 /**
  * Get all models for a specific owner
  * This is the primary function to use when working with owner-specific data
@@ -38,22 +37,21 @@ const getOwnerModels = (ownerId) => {
   if (!ownerId) {
     throw new Error('ownerId is required to get owner models');
   }
-  const cleanId = ownerId.replace(/^owner_/, '');
   return {
-    Restaurant: getRestaurantModel(cleanId),
-    Manager: getManagerModel(cleanId),
-    Employee: getEmployeeModel(cleanId),
-    Menu: getMenuModel(cleanId),
-    Order: getOrderModel(cleanId),
-    Customer: getCustomerModel(cleanId),
-    Table: getTableModel(cleanId),
-    Reservation: getReservationModel(cleanId),
-    Inventory: getInventoryModel(cleanId),
-    Coupon: getCouponModel(cleanId),
-    LoyaltyPoint: getLoyaltyPointModel(cleanId),
-    Transaction: getTransactionModel(cleanId),
-    Notification: getNotificationModel(cleanId),
-    AuditLog: getAuditLogModel(cleanId)
+    Restaurant: getRestaurantModel(ownerId),
+    Manager: getManagerModel(ownerId),
+    Employee: getEmployeeModel(ownerId),
+    Menu: getMenuModel(ownerId),
+    Order: getOrderModel(ownerId),
+    Customer: getCustomerModel(ownerId),
+    Table: getTableModel(ownerId),
+    Reservation: getReservationModel(ownerId),
+    Inventory: getInventoryModel(ownerId),
+    Coupon: getCouponModel(ownerId),
+    LoyaltyPoint: getLoyaltyPointModel(ownerId),
+    Transaction: getTransactionModel(ownerId),
+    Notification: getNotificationModel(ownerId),
+    AuditLog: getAuditLogModel(ownerId)
   };
 };
 
@@ -70,15 +68,17 @@ const getOwnerModels = (ownerId) => {
  * const restaurant = await RestaurantModel.findById(restaurantId);
  */
 const getOwnerModel = (ownerId, modelName) => {
-  const cleanId = ownerId.replace(/^owner_/, '');
-  const models = getOwnerModels(cleanId);
+  if (!ownerId) throw new Error("ownerId is required");
   
+  const models = getOwnerModels(ownerId);
+
   if (!models[modelName]) {
     throw new Error(`Model '${modelName}' not found`);
   }
-  
+
   return models[modelName];
 };
+
 
 // Export Platform Models (direct access)
 module.exports = {

@@ -12,36 +12,36 @@ const crypto = require('crypto');
 const platformAdminLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
-    
+
     // Find platform admin
     const admin = await PlatformAdmin.findOne({ email }).select('+password');
-    
+
     if (!admin) {
       return ResponseHelper.unauthorized(res, 'Invalid email or password');
     }
-    
+
     // Check if account is active
     if (!admin.isActive) {
       return ResponseHelper.forbidden(res, 'Your account has been deactivated');
     }
-    
+
     // Verify password
     const isPasswordValid = await admin.comparePassword(password);
-    
+
     if (!isPasswordValid) {
       return ResponseHelper.unauthorized(res, 'Invalid email or password');
     }
-    
+
     // Update last login
     admin.lastLogin = new Date();
     await admin.save();
-    
+
     // Generate tokens
     const tokens = generateTokenPair({
       userId: admin._id,
       role: 'superadmin'
     });
-    
+
     // Set refresh token in httpOnly cookie
     res.cookie('refreshToken', tokens.refreshToken, {
       httpOnly: true,
@@ -49,9 +49,9 @@ const platformAdminLogin = async (req, res) => {
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
-    
+
     logger.info(`Platform admin logged in: ${admin._id}`);
-    
+
     return ResponseHelper.success(res, 200, 'Login successful', {
       accessToken: tokens.accessToken,
       user: {
@@ -71,76 +71,293 @@ const platformAdminLogin = async (req, res) => {
  * Create Restaurant Owner
  * POST /api/platform/owners
  */
+// const createOwner = async (req, res) => {
+//   try {
+//     const { fullName, email, phone, password } = req.body;
+
+//     // Check if owner already exists
+//     const existingOwner = await Owner.findOne({ email });
+//     if (existingOwner) {
+//       return ResponseHelper.error(res, 400, 'Owner with this email already exists');
+//     }
+
+//     // Create owner document (let mongoose generate _id)
+//     const owner = await Owner.create({
+//       // Do NOT create a custom ownerId string here
+//       fullName,
+//       email,
+//       phone,
+//       password,
+//       isFirstLogin: true,
+//       createdBy: req.user.id,
+//       ownedDatabases: []
+//     });
+
+//     // Use the Owner's ObjectId string as  ownerId
+//     const canonicalOwnerId = owner._id.toString(); // <-- important
+
+//     // Build DB name using single `owner_` prefix and the ObjectId
+//     const dbName = `owner_${canonicalOwnerId}`;
+
+//     // Save dbName into ownedDatabases
+//     owner.ownerId = canonicalOwnerId; // optional: store canonical ownerId field
+//     owner.ownedDatabases = [dbName];
+//     await owner.save();
+
+//     // OPTIONAL: create/initialize owner DB and seed default documents
+//     const { connectOwnerDB } = require('../config/database');
+//     const ownerDb = connectOwnerDB(canonicalOwnerId); // returns a Db connection (useDb)
+//     // create default collections/documents if desired:
+//     try {
+//       // Example: create a default "Settings" doc for the owner
+//       const SettingsSchema = new mongoose.Schema({
+//         key: String, value: mongoose.Schema.Types.Mixed
+//       }, { collection: 'settings' });
+//       // Register model on owner DB
+//       ownerDb.model('Settings', SettingsSchema);
+//       // Insert default settings if not present
+//       const Settings = ownerDb.model('Settings');
+//       const existing = await Settings.findOne({ key: 'default' }).lean();
+//       if (!existing) {
+//         await Settings.create({ key: 'default', value: { currency: 'INR', language: 'en' } });
+//       }
+//     } catch (err) {
+//       // don't crash owner creation if seeding fails; just log
+//       logger.warn('Owner DB seed warning:', err.message);
+//     }
+
+//     logger.info(`Owner created by platform admin: ${owner._id}`);
+
+//     return ResponseHelper.created(res, 'Restaurant owner created successfully', {
+//       owner: {
+//         id: owner._id,
+//         ownerId: canonicalOwnerId,
+//         fullName: owner.fullName,
+//         email: owner.email,
+//         phone: owner.phone,
+//         isFirstLogin: owner.isFirstLogin,
+//         createdAt: owner.createdAt
+//       },
+//       loginCredentials: {
+//         email: owner.email,
+//         temporaryPassword: 'Please share the password securely',
+//         loginUrl: `${process.env.FRONTEND_URL}/admin/login`
+//       }
+//     });
+//   } catch (error) {
+//     logger.error('Create owner error:', error);
+//     return ResponseHelper.error(res, 500, 'Failed to create owner');
+//   }
+// };
+
+
+
+// /**
+//  * Create Restaurant Owner
+//  * POST /api/platform/owners
+//  */
+// const createOwner = async (req, res) => {
+//   try {
+//     const { fullName, email, phone, password } = req.body;
+
+//     // Check if owner already exists
+//     const existingOwner = await Owner.findOne({ email });
+//     if (existingOwner) {
+//       return ResponseHelper.error(res, 400, 'Owner with this email already exists');
+//     }
+
+//     // Create owner document (let mongoose generate _id)
+//     const owner = new Owner({
+//       fullName,
+//       email,
+//       phone,
+//       password,
+//       isFirstLogin: true,
+//       createdBy: req.user.id,
+//       ownedDatabases: []
+//     });
+//     await owner.save();
+
+//     // Build tenant DB name using automatically assigned ownerId
+//     const dbName = `owner_${owner.ownerId}`;
+//     owner.ownedDatabases = [dbName];
+//     await owner.save();
+
+
+
+//     // -------------------------------------------
+//     // CONNECT TO TENANT DB (OWNER DB)
+//     // -------------------------------------------
+//     const { connectOwnerDB } = require('../config/database');
+//     const ownerDb = connectOwnerDB(OwnerId);
+
+
+//     // -------------------------------------------
+//     // SEED DEFAULT SETTINGS (your existing code)
+//     // -------------------------------------------
+//     try {
+//       const SettingsSchema = new mongoose.Schema(
+//         {
+//           key: String,
+//           value: mongoose.Schema.Types.Mixed
+//         },
+//         { collection: 'settings' }
+//       );
+
+//       ownerDb.model('Settings', SettingsSchema);
+
+//       const Settings = ownerDb.model('Settings');
+//       const existing = await Settings.findOne({ key: 'default' }).lean();
+
+//       if (!existing) {
+//         await Settings.create({
+//           key: 'default',
+//           value: { currency: 'INR', language: 'en' }
+//         });
+//       }
+//     } catch (err) {
+//       logger.warn('Owner DB seed warning:', err.message);
+//     }
+
+
+//     // -------------------------------------------
+//     // PATCH 2 — INITIALIZE ALL TENANT MODELS & INDEXES
+//     // -------------------------------------------
+//     try {
+//       const { getOwnerModels } = require('../models');
+//       const models = getOwnerModels(OwnerId);
+
+//       for (const key in models) {
+//         if (models[key] && typeof models[key].createIndexes === 'function') {
+//           try {
+//             await models[key].createIndexes();
+//           } catch (e) {
+//             console.warn(`Index creation failed for model ${key}:`, e.message);
+//           }
+//         }
+//       }
+//       logger.info(`Tenant DB initialized for owner ${OwnerId}`);
+//     } catch (err) {
+//       logger.warn('Tenant model initialization warning:', err.message);
+//     }
+//     // -------------------------------------------
+//     // END PATCH 2
+//     // -------------------------------------------
+
+
+//     logger.info(`Owner created by platform admin: ${owner._id}`);
+
+//     return ResponseHelper.created(res, 'Restaurant owner created successfully', {
+//       owner: {
+//         id: owner._id,
+//         ownerId: OwnerId,
+//         fullName: owner.fullName,
+//         email: owner.email,
+//         phone: owner.phone,
+//         isFirstLogin: owner.isFirstLogin,
+//         createdAt: owner.createdAt
+//       },
+//       loginCredentials: {
+//         email: owner.email,
+//         temporaryPassword: 'Please share the password securely',
+//         loginUrl: `${process.env.FRONTEND_URL}/admin/login`
+//       }
+//     });
+//   } catch (error) {
+//     logger.error('Create owner error:', error);
+//     return ResponseHelper.error(res, 500, 'Failed to create owner');
+//   }
+// };
+
+/**
+ * Create Restaurant Owner
+ * POST /api/platform/owners
+ */
 const createOwner = async (req, res) => {
   try {
     const { fullName, email, phone, password } = req.body;
-    
-    // Check if owner already exists
+
+    // 1️⃣ Check if owner already exists in platform_main
     const existingOwner = await Owner.findOne({ email });
     if (existingOwner) {
       return ResponseHelper.error(res, 400, 'Owner with this email already exists');
     }
-    
-    // Create owner document (let mongoose generate _id)
-    const owner = await Owner.create({
-      // Do NOT create a custom ownerId string here
+
+    // 2️⃣ Create owner in platform_main (platform DB)
+    const owner = new Owner({
       fullName,
       email,
       phone,
       password,
       isFirstLogin: true,
       createdBy: req.user.id,
-      ownedDatabases: []
+      ownedDatabases: [] // tenant DBs will be added after creation
     });
+    await owner.save(); // ownerId is automatically assigned via pre-save hook
 
-    // Use the Owner's ObjectId string as canonical ownerId
-    const canonicalOwnerId = owner._id.toString(); // <-- important
+    // 3️⃣ Build tenant DB name using ownerId
+    const tenantDbName = `owner_${owner.ownerId}`;
+    owner.ownedDatabases = [tenantDbName];
+    await owner.save(); // save the tenant DB info in platform_main
 
-    // Build DB name using single `owner_` prefix and the ObjectId
-    const dbName = `owner_${canonicalOwnerId}`;
-
-    // Save dbName into ownedDatabases
-    owner.ownerId = canonicalOwnerId; // optional: store canonical ownerId field
-    owner.ownedDatabases = [dbName];
-    await owner.save();
-
-    // OPTIONAL: create/initialize owner DB and seed default documents
+    // 4️⃣ Connect to tenant DB (owner's own database)
     const { connectOwnerDB } = require('../config/database');
-    const ownerDb = connectOwnerDB(canonicalOwnerId); // returns a Db connection (useDb)
-    // create default collections/documents if desired:
+    const tenantDb = connectOwnerDB(owner.ownerId);
+
+    // 5️⃣ Seed default settings in tenant DB
     try {
-      // Example: create a default "Settings" doc for the owner
-      const SettingsSchema = new mongoose.Schema({
-        key: String, value: mongoose.Schema.Types.Mixed
-      }, { collection: 'settings' });
-      // Register model on owner DB
-      ownerDb.model('Settings', SettingsSchema);
-      // Insert default settings if not present
-      const Settings = ownerDb.model('Settings');
+      const SettingsSchema = new mongoose.Schema(
+        { key: String, value: mongoose.Schema.Types.Mixed },
+        { collection: 'settings' }
+      );
+
+      tenantDb.model('Settings', SettingsSchema);
+      const Settings = tenantDb.model('Settings');
+
       const existing = await Settings.findOne({ key: 'default' }).lean();
       if (!existing) {
         await Settings.create({ key: 'default', value: { currency: 'INR', language: 'en' } });
       }
     } catch (err) {
-      // don't crash owner creation if seeding fails; just log
-      logger.warn('Owner DB seed warning:', err.message);
+      logger.warn('Owner tenant DB seed warning:', err.message);
     }
 
-    logger.info(`Owner created by platform admin: ${owner._id}`);
+    // 6️⃣ Initialize tenant models & indexes
+    try {
+      const { getOwnerModels } = require('../models');
+      const models = getOwnerModels(owner.ownerId);
 
+      for (const key in models) {
+        if (models[key]?.createIndexes) {
+          try {
+            await models[key].createIndexes();
+          } catch (e) {
+            console.warn(`Index creation failed for model ${key}:`, e.message);
+          }
+        }
+      }
+
+      logger.info(`Tenant DB initialized for owner ${owner.ownerId}`);
+    } catch (err) {
+      logger.warn('Tenant model initialization warning:', err.message);
+    }
+
+    logger.info(`Owner created in platform_main: ${owner._id}`);
+
+    // 7️⃣ Return response
     return ResponseHelper.created(res, 'Restaurant owner created successfully', {
       owner: {
         id: owner._id,
-        ownerId: canonicalOwnerId,
+        ownerId: owner.ownerId,
         fullName: owner.fullName,
         email: owner.email,
         phone: owner.phone,
         isFirstLogin: owner.isFirstLogin,
-        createdAt: owner.createdAt
+        createdAt: owner.createdAt,
       },
       loginCredentials: {
         email: owner.email,
-        temporaryPassword: 'Please share the password securely',
+        temporaryPassword: owner.password,
         loginUrl: `${process.env.FRONTEND_URL}/admin/login`
       }
     });
@@ -149,6 +366,9 @@ const createOwner = async (req, res) => {
     return ResponseHelper.error(res, 500, 'Failed to create owner');
   }
 };
+
+
+
 
 /**
  * Get All Restaurant Owners
@@ -164,10 +384,10 @@ const getAllOwners = async (req, res) => {
       sortBy = 'createdAt',
       sortOrder = 'desc'
     } = req.query;
-    
+
     // Build query
     const query = {};
-    
+
     if (search) {
       query.$or = [
         { fullName: { $regex: search, $options: 'i' } },
@@ -175,15 +395,15 @@ const getAllOwners = async (req, res) => {
         { phone: { $regex: search, $options: 'i' } }
       ];
     }
-    
+
     if (isActive !== undefined) {
       query.isActive = isActive === 'true';
     }
-    
+
     // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
-    
+
     // Execute query
     const [owners, total] = await Promise.all([
       Owner.find(query)
@@ -194,14 +414,14 @@ const getAllOwners = async (req, res) => {
         .lean(),
       Owner.countDocuments(query)
     ]);
-    
+
     // Get restaurant count for each owner (simplified - actual implementation would query each owner's DB)
     const ownersWithStats = owners.map(owner => ({
       ...owner,
       restaurantCount: owner.ownedDatabases?.length || 0,
       lastLogin: owner.lastLogin || null
     }));
-    
+
     return ResponseHelper.paginated(
       res,
       ownersWithStats,
@@ -222,13 +442,13 @@ const getAllOwners = async (req, res) => {
 const getOwnerById = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const owner = await Owner.findById(id).select('-password');
-    
+
     if (!owner) {
       return ResponseHelper.notFound(res, 'Owner not found');
     }
-    
+
     // Get additional stats (simplified)
     const stats = {
       totalRestaurants: owner.ownedDatabases?.length || 0,
@@ -236,7 +456,7 @@ const getOwnerById = async (req, res) => {
       lastLogin: owner.lastLogin,
       isFirstLogin: owner.isFirstLogin
     };
-    
+
     return ResponseHelper.success(res, 200, 'Owner retrieved successfully', {
       owner: {
         ...owner.toObject(),
@@ -257,13 +477,13 @@ const updateOwner = async (req, res) => {
   try {
     const { id } = req.params;
     const { fullName, email, phone, isActive } = req.body;
-    
+
     const owner = await Owner.findById(id);
-    
+
     if (!owner) {
       return ResponseHelper.notFound(res, 'Owner not found');
     }
-    
+
     // Check if email is being changed and already exists
     if (email && email !== owner.email) {
       const existingOwner = await Owner.findOne({ email });
@@ -271,17 +491,17 @@ const updateOwner = async (req, res) => {
         return ResponseHelper.error(res, 400, 'Email already in use');
       }
     }
-    
+
     // Update fields
     if (fullName) owner.fullName = fullName;
     if (email) owner.email = email;
     if (phone) owner.phone = phone;
     if (isActive !== undefined) owner.isActive = isActive;
-    
+
     await owner.save();
-    
+
     logger.info(`Owner updated by platform admin: ${owner._id}`);
-    
+
     return ResponseHelper.success(res, 200, 'Owner updated successfully', {
       owner: {
         id: owner._id,
@@ -305,18 +525,18 @@ const toggleOwnerStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { isActive } = req.body;
-    
+
     const owner = await Owner.findById(id);
-    
+
     if (!owner) {
       return ResponseHelper.notFound(res, 'Owner not found');
     }
-    
+
     owner.isActive = isActive;
     await owner.save();
-    
+
     logger.info(`Owner ${isActive ? 'activated' : 'deactivated'} by platform admin: ${owner._id}`);
-    
+
     return ResponseHelper.success(res, 200, `Owner account ${isActive ? 'activated' : 'deactivated'} successfully`, {
       owner: {
         id: owner._id,
@@ -338,19 +558,19 @@ const toggleOwnerStatus = async (req, res) => {
 const deleteOwner = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const owner = await Owner.findById(id);
-    
+
     if (!owner) {
       return ResponseHelper.notFound(res, 'Owner not found');
     }
-    
+
     // Soft delete - just deactivate
     owner.isActive = false;
     await owner.save();
-    
+
     logger.warn(`Owner soft deleted by platform admin: ${owner._id}`);
-    
+
     return ResponseHelper.success(res, 200, 'Owner account deactivated successfully');
   } catch (error) {
     logger.error('Delete owner error:', error);
@@ -366,20 +586,20 @@ const resetOwnerPassword = async (req, res) => {
   try {
     const { id } = req.params;
     const { newPassword } = req.body;
-    
+
     const owner = await Owner.findById(id);
-    
+
     if (!owner) {
       return ResponseHelper.notFound(res, 'Owner not found');
     }
-    
+
     // Set new password
     owner.password = newPassword;
     owner.isFirstLogin = true; // Force password change on next login
     await owner.save();
-    
+
     logger.info(`Owner password reset by platform admin: ${owner._id}`);
-    
+
     return ResponseHelper.success(res, 200, 'Password reset successfully. Owner will be required to change it on next login.');
   } catch (error) {
     logger.error('Reset owner password error:', error);
@@ -409,14 +629,14 @@ const getPlatformStats = async (req, res) => {
         }
       })
     ]);
-    
+
     // Get recent owners
     const recentOwners = await Owner.find()
       .select('fullName email createdAt')
       .sort({ createdAt: -1 })
       .limit(5)
       .lean();
-    
+
     return ResponseHelper.success(res, 200, 'Platform statistics retrieved successfully', {
       stats: {
         totalOwners,

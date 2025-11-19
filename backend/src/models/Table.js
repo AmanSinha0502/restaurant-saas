@@ -1,6 +1,13 @@
 const mongoose = require('mongoose');
 
 const tableSchema = new mongoose.Schema({
+ownerId: {
+  type: String,
+  required: true,
+  index: true
+},
+
+
   restaurantId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Restaurant',

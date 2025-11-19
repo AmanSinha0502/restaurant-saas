@@ -23,29 +23,30 @@ const createManager = async (req, res) => {
       assignedRestaurants,
       permissions
     } = req.body;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Manager = models.Manager;
     const Restaurant = models.Restaurant;
-    
+
     // Check if manager with email already exists
-    const existingManager = await Manager.findOne({ email });
+    const existingManager = await Manager.findOne({ email, ownerId: req.ownerId });
+
     if (existingManager) {
       return ResponseHelper.error(res, 400, 'Manager with this email already exists');
     }
-    
+
     // Verify all assigned restaurants exist and belong to this owner
     if (assignedRestaurants && assignedRestaurants.length > 0) {
       const restaurants = await Restaurant.find({
         _id: { $in: assignedRestaurants },
         ownerId: req.ownerId
       });
-      
+
       if (restaurants.length !== assignedRestaurants.length) {
         return ResponseHelper.error(res, 400, 'One or more restaurants not found or do not belong to you');
       }
     }
-    
+
     // Create manager
     const manager = await Manager.create({
       ownerId: req.ownerId,
@@ -65,9 +66,9 @@ const createManager = async (req, res) => {
       },
       createdBy: req.user.id
     });
-    
+
     logger.info(`Manager created: ${manager._id} by owner: ${req.ownerId}`);
-    
+
     return ResponseHelper.created(res, 'Manager created successfully', {
       manager: {
         id: manager._id,
@@ -97,13 +98,13 @@ const createManager = async (req, res) => {
 const getAllManagers = async (req, res) => {
   try {
     const { search, isActive, restaurantId } = req.query;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Manager = models.Manager;
-    
+
     // Build query
     const query = { ownerId: req.ownerId };
-    
+
     if (search) {
       query.$or = [
         { fullName: { $regex: search, $options: 'i' } },
@@ -111,21 +112,26 @@ const getAllManagers = async (req, res) => {
         { phone: { $regex: search, $options: 'i' } }
       ];
     }
-    
+
     if (isActive !== undefined) {
       query.isActive = isActive === 'true';
     }
-    
+
     if (restaurantId) {
       query.assignedRestaurants = restaurantId;
     }
-    
+
     // Execute query
     const managers = await Manager.find(query)
-      .populate('assignedRestaurants', 'name slug')
+     .populate({
+  path: 'assignedRestaurants',
+  model: models.Restaurant,
+  select: 'name slug'
+})
+
       .sort({ createdAt: -1 })
       .lean();
-    
+
     return ResponseHelper.success(res, 200, 'Managers retrieved successfully', {
       managers,
       total: managers.length
@@ -143,19 +149,23 @@ const getAllManagers = async (req, res) => {
 const getManagerById = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Manager = models.Manager;
-    
+
     const manager = await Manager.findOne({
       _id: id,
       ownerId: req.ownerId
-    }).populate('assignedRestaurants', 'name slug address');
-    
+    }).populate({
+  path: 'assignedRestaurants',
+  model: models.Restaurant,
+  select: 'name slug address'
+});
+
     if (!manager) {
       return ResponseHelper.notFound(res, 'Manager not found');
     }
-    
+
     return ResponseHelper.success(res, 200, 'Manager retrieved successfully', {
       manager
     });
@@ -173,20 +183,20 @@ const updateManager = async (req, res) => {
   try {
     const { id } = req.params;
     const { fullName, email, phone, assignedRestaurants, permissions, isActive } = req.body;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Manager = models.Manager;
     const Restaurant = models.Restaurant;
-    
+
     const manager = await Manager.findOne({
       _id: id,
       ownerId: req.ownerId
     });
-    
+
     if (!manager) {
       return ResponseHelper.notFound(res, 'Manager not found');
     }
-    
+
     // Check if email is being changed and already exists
     if (email && email !== manager.email) {
       const existingManager = await Manager.findOne({ email, ownerId: req.ownerId });
@@ -194,19 +204,19 @@ const updateManager = async (req, res) => {
         return ResponseHelper.error(res, 400, 'Email already in use by another manager');
       }
     }
-    
+
     // Verify assigned restaurants if being updated
     if (assignedRestaurants) {
       const restaurants = await Restaurant.find({
         _id: { $in: assignedRestaurants },
         ownerId: req.ownerId
       });
-      
+
       if (restaurants.length !== assignedRestaurants.length) {
         return ResponseHelper.error(res, 400, 'One or more restaurants not found');
       }
     }
-    
+
     // Update fields
     if (fullName) manager.fullName = fullName;
     if (email) manager.email = email;
@@ -214,11 +224,11 @@ const updateManager = async (req, res) => {
     if (assignedRestaurants) manager.assignedRestaurants = assignedRestaurants;
     if (permissions) manager.permissions = { ...manager.permissions, ...permissions };
     if (isActive !== undefined) manager.isActive = isActive;
-    
+
     await manager.save();
-    
+
     logger.info(`Manager updated: ${manager._id} by owner: ${req.ownerId}`);
-    
+
     return ResponseHelper.success(res, 200, 'Manager updated successfully', {
       manager
     });
@@ -235,25 +245,25 @@ const updateManager = async (req, res) => {
 const deleteManager = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Manager = models.Manager;
-    
+
     const manager = await Manager.findOne({
       _id: id,
       ownerId: req.ownerId
     });
-    
+
     if (!manager) {
       return ResponseHelper.notFound(res, 'Manager not found');
     }
-    
+
     // Soft delete - deactivate
     manager.isActive = false;
     await manager.save();
-    
+
     logger.warn(`Manager deactivated: ${manager._id} by owner: ${req.ownerId}`);
-    
+
     return ResponseHelper.success(res, 200, 'Manager deactivated successfully');
   } catch (error) {
     logger.error('Delete manager error:', error);
@@ -269,30 +279,30 @@ const updateManagerRestaurants = async (req, res) => {
   try {
     const { id } = req.params;
     const { restaurantIds, action } = req.body; // action: 'assign' or 'unassign'
-    
+
     const models = getOwnerModels(req.ownerId);
     const Manager = models.Manager;
     const Restaurant = models.Restaurant;
-    
+
     const manager = await Manager.findOne({
       _id: id,
       ownerId: req.ownerId
     });
-    
+
     if (!manager) {
       return ResponseHelper.notFound(res, 'Manager not found');
     }
-    
+
     // Verify restaurants exist
     const restaurants = await Restaurant.find({
       _id: { $in: restaurantIds },
       ownerId: req.ownerId
     });
-    
+
     if (restaurants.length !== restaurantIds.length) {
       return ResponseHelper.error(res, 400, 'One or more restaurants not found');
     }
-    
+
     if (action === 'assign') {
       // Add restaurants (avoid duplicates)
       const newRestaurants = restaurantIds.filter(
@@ -307,11 +317,11 @@ const updateManagerRestaurants = async (req, res) => {
     } else {
       return ResponseHelper.error(res, 400, 'Invalid action. Use "assign" or "unassign"');
     }
-    
+
     await manager.save();
-    
+
     logger.info(`Manager ${id} restaurants ${action}ed by owner: ${req.ownerId}`);
-    
+
     return ResponseHelper.success(res, 200, `Restaurants ${action}ed successfully`, {
       manager: {
         id: manager._id,
@@ -345,33 +355,34 @@ const createEmployee = async (req, res) => {
       restaurantId,
       employeeType
     } = req.body;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Employee = models.Employee;
     const Restaurant = models.Restaurant;
-    
+
     // Verify restaurant exists and belongs to owner
     const restaurant = await Restaurant.findOne({
       _id: restaurantId,
       ownerId: req.ownerId
     });
-    
+
     if (!restaurant) {
       return ResponseHelper.error(res, 400, 'Restaurant not found');
     }
-    
+
     // Check if employee with email already exists in this restaurant
     const existingEmployee = await Employee.findOne({
       email,
-      restaurantId
+      ownerId: req.ownerId
     });
-    
+
     if (existingEmployee) {
       return ResponseHelper.error(res, 400, 'Employee with this email already exists in this restaurant');
     }
-    
+
     // Create employee (permissions auto-set based on employeeType in pre-save hook)
     const employee = await Employee.create({
+      ownerId: req.ownerId,
       restaurantId,
       fullName,
       email,
@@ -380,9 +391,9 @@ const createEmployee = async (req, res) => {
       employeeType,
       createdBy: req.user.id
     });
-    
+
     logger.info(`Employee created: ${employee._id} for restaurant: ${restaurantId}`);
-    
+
     return ResponseHelper.created(res, 'Employee created successfully', {
       employee: {
         id: employee._id,
@@ -413,18 +424,19 @@ const createEmployee = async (req, res) => {
 const getAllEmployees = async (req, res) => {
   try {
     const { search, isActive, restaurantId, employeeType } = req.query;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Employee = models.Employee;
-    
+
     // Build query
-    const query = {};
-    
+    const query = { ownerId: req.ownerId };
+
+
     // If manager, filter by assigned restaurants
     if (req.user.role === 'manager' && req.assignedRestaurants) {
       query.restaurantId = { $in: req.assignedRestaurants };
     }
-    
+
     if (search) {
       query.$or = [
         { fullName: { $regex: search, $options: 'i' } },
@@ -432,25 +444,30 @@ const getAllEmployees = async (req, res) => {
         { phone: { $regex: search, $options: 'i' } }
       ];
     }
-    
+
     if (isActive !== undefined) {
       query.isActive = isActive === 'true';
     }
-    
+
     if (restaurantId) {
       query.restaurantId = restaurantId;
     }
-    
+
     if (employeeType) {
       query.employeeType = employeeType;
     }
-    
+
     // Execute query
     const employees = await Employee.find(query)
-      .populate('restaurantId', 'name slug')
+   .populate({
+  path: 'restaurantId',
+  model: models.Restaurant,
+  select: 'name slug'
+})
+
       .sort({ createdAt: -1 })
       .lean();
-    
+
     return ResponseHelper.success(res, 200, 'Employees retrieved successfully', {
       employees,
       total: employees.length
@@ -468,24 +485,29 @@ const getAllEmployees = async (req, res) => {
 const getEmployeeById = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Employee = models.Employee;
-    
+
     const query = { _id: id };
-    
+
     // If manager, ensure employee belongs to assigned restaurant
     if (req.user.role === 'manager' && req.assignedRestaurants) {
       query.restaurantId = { $in: req.assignedRestaurants };
     }
-    
+
     const employee = await Employee.findOne(query)
-      .populate('restaurantId', 'name slug address');
-    
+      .populate({
+  path: 'restaurantId',
+  model: models.Restaurant,
+  select: 'name slug address'
+})
+
+
     if (!employee) {
       return ResponseHelper.notFound(res, 'Employee not found');
     }
-    
+
     return ResponseHelper.success(res, 200, 'Employee retrieved successfully', {
       employee
     });
@@ -503,35 +525,35 @@ const updateEmployee = async (req, res) => {
   try {
     const { id } = req.params;
     const { fullName, email, phone, employeeType, permissions, isActive } = req.body;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Employee = models.Employee;
-    
+
     const query = { _id: id };
-    
+
     // If manager, ensure employee belongs to assigned restaurant
     if (req.user.role === 'manager' && req.assignedRestaurants) {
       query.restaurantId = { $in: req.assignedRestaurants };
     }
-    
+
     const employee = await Employee.findOne(query);
-    
+
     if (!employee) {
       return ResponseHelper.notFound(res, 'Employee not found');
     }
-    
+
     // Check if email is being changed and already exists
     if (email && email !== employee.email) {
       const existingEmployee = await Employee.findOne({
         email,
         restaurantId: employee.restaurantId
       });
-      
+
       if (existingEmployee) {
         return ResponseHelper.error(res, 400, 'Email already in use by another employee');
       }
     }
-    
+
     // Update fields
     if (fullName) employee.fullName = fullName;
     if (email) employee.email = email;
@@ -539,11 +561,11 @@ const updateEmployee = async (req, res) => {
     if (employeeType) employee.employeeType = employeeType;
     if (permissions) employee.permissions = { ...employee.permissions, ...permissions };
     if (isActive !== undefined) employee.isActive = isActive;
-    
+
     await employee.save();
-    
+
     logger.info(`Employee updated: ${employee._id} by ${req.user.role}: ${req.user.id}`);
-    
+
     return ResponseHelper.success(res, 200, 'Employee updated successfully', {
       employee
     });
@@ -560,29 +582,29 @@ const updateEmployee = async (req, res) => {
 const deleteEmployee = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Employee = models.Employee;
-    
+
     const query = { _id: id };
-    
+
     // If manager, ensure employee belongs to assigned restaurant
     if (req.user.role === 'manager' && req.assignedRestaurants) {
       query.restaurantId = { $in: req.assignedRestaurants };
     }
-    
+
     const employee = await Employee.findOne(query);
-    
+
     if (!employee) {
       return ResponseHelper.notFound(res, 'Employee not found');
     }
-    
+
     // Soft delete - deactivate
     employee.isActive = false;
     await employee.save();
-    
+
     logger.warn(`Employee deactivated: ${employee._id} by ${req.user.role}: ${req.user.id}`);
-    
+
     return ResponseHelper.success(res, 200, 'Employee deactivated successfully');
   } catch (error) {
     logger.error('Delete employee error:', error);
@@ -597,25 +619,25 @@ const deleteEmployee = async (req, res) => {
 const getStaffStats = async (req, res) => {
   try {
     const { restaurantId } = req.query;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Manager = models.Manager;
     const Employee = models.Employee;
-    
+
     let managerQuery = { ownerId: req.ownerId };
     let employeeQuery = {};
-    
+
     // If manager role, filter by assigned restaurants
     if (req.user.role === 'manager' && req.assignedRestaurants) {
       managerQuery = { _id: req.user.id };
       employeeQuery.restaurantId = { $in: req.assignedRestaurants };
     }
-    
+
     if (restaurantId) {
       managerQuery.assignedRestaurants = restaurantId;
       employeeQuery.restaurantId = restaurantId;
     }
-    
+
     const [
       totalManagers,
       activeManagers,
@@ -637,7 +659,7 @@ const getStaffStats = async (req, res) => {
         }
       ])
     ]);
-    
+
     return ResponseHelper.success(res, 200, 'Staff statistics retrieved successfully', {
       managers: {
         total: totalManagers,
@@ -668,14 +690,14 @@ module.exports = {
   updateManager,
   deleteManager,
   updateManagerRestaurants,
-  
+
   // Employee Management
   createEmployee,
   getAllEmployees,
   getEmployeeById,
   updateEmployee,
   deleteEmployee,
-  
+
   // Statistics
   getStaffStats
 };

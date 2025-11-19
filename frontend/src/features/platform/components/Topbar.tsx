@@ -1,6 +1,6 @@
 import React from 'react';
-import { useTheme } from '../../contexts/ThemeContext';
-import { useAuth } from '../../contexts/AuthContext';
+import { useTheme } from '../../../contexts/ThemeContext';
+import { useAuth } from '../../../contexts/AuthContext';
 import { IconAdd } from './icons';
 
 export default function Topbar({ onAdd }: { onAdd?: ()=>void }) {

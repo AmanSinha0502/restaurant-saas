@@ -1,6 +1,6 @@
 // src/components/platform/modals/ConfirmDeleteModal.tsx
 import React from 'react';
-import { MotionBackdrop, MotionCard } from '../MotionModal';
+import { MotionBackdrop, MotionCard } from './MotionModal';
 import { toast } from 'react-hot-toast';
 import type { Owner } from '../../../types';
 

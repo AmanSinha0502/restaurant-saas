@@ -26,17 +26,17 @@ const createMenuItem = async (req, res) => {
       spiceLevel,
       customizations
     } = req.body;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Menu = models.Menu;
     const Restaurant = models.Restaurant;
-    
+
     // Handle image uploads
     let images = [];
     if (req.files && req.files.length > 0) {
       images = req.files.map(file => `/uploads/images/${file.filename}`);
     }
-    
+
     // Verify restaurants if specific branches
     let restaurantId = null;
     if (!sharedAcrossBranches && specificBranches && specificBranches.length > 0) {
@@ -44,17 +44,17 @@ const createMenuItem = async (req, res) => {
         _id: { $in: specificBranches },
         ownerId: req.ownerId
       });
-      
+
       if (restaurants.length !== specificBranches.length) {
         // Cleanup uploaded images
         if (req.files) deleteUploadedFiles(req.files);
         return ResponseHelper.error(res, 400, 'One or more restaurants not found');
       }
-      
+
       // For branch-specific, set restaurantId to first one (or handle differently)
       restaurantId = specificBranches[0];
     }
-    
+
     // Create menu item
     const menuItem = await Menu.create({
       restaurantId,
@@ -78,9 +78,9 @@ const createMenuItem = async (req, res) => {
       customizations: customizations || [],
       createdBy: req.user.id
     });
-    
+
     logger.info(`Menu item created: ${menuItem._id} by ${req.user.role}: ${req.user.id}`);
-    
+
     return ResponseHelper.created(res, 'Menu item created successfully', {
       menuItem
     });
@@ -111,28 +111,28 @@ const getAllMenuItems = async (req, res) => {
       sortBy = 'createdAt',
       sortOrder = 'desc'
     } = req.query;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Menu = models.Menu;
-    
+
     // Build query
     const query = { ownerId: req.ownerId };
-    
+
     // Filter by category
     if (category) {
       query.category = category;
     }
-    
+
     // Filter by dietary type
     if (dietaryType) {
       query.dietaryType = dietaryType;
     }
-    
+
     // Filter by active status
     if (isActive !== undefined) {
       query.isActive = isActive === 'true';
     }
-    
+
     // Filter by restaurant (branch-specific or shared)
     if (restaurantId) {
       query.$or = [
@@ -140,12 +140,12 @@ const getAllMenuItems = async (req, res) => {
         { specificBranches: restaurantId }
       ];
     }
-    
+
     // Filter shared only
     if (sharedOnly === 'true') {
       query.sharedAcrossBranches = true;
     }
-    
+
     // Search by name or description
     if (search) {
       query.$or = [
@@ -155,28 +155,28 @@ const getAllMenuItems = async (req, res) => {
         { 'description.en': { $regex: search, $options: 'i' } }
       ];
     }
-    
+
     // Price range
     if (minPrice || maxPrice) {
       query.price = {};
       if (minPrice) query.price.$gte = parseFloat(minPrice);
       if (maxPrice) query.price.$lte = parseFloat(maxPrice);
     }
-    
+
     // Filter by tags
     if (tags) {
       const tagArray = tags.split(',').map(t => t.trim());
       query.tags = { $in: tagArray };
     }
-    
+
     // Sort
     const sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
-    
+
     // Execute query
     const menuItems = await Menu.find(query)
       .sort(sort)
       .lean();
-    
+
     return ResponseHelper.success(res, 200, 'Menu items retrieved successfully', {
       menuItems,
       total: menuItems.length
@@ -194,19 +194,19 @@ const getAllMenuItems = async (req, res) => {
 const getMenuItemById = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Menu = models.Menu;
-    
+
     const menuItem = await Menu.findOne({
       _id: id,
       ownerId: req.ownerId
     }).populate('linkedInventoryItems.inventoryId', 'itemName currentStock unit');
-    
+
     if (!menuItem) {
       return ResponseHelper.notFound(res, 'Menu item not found');
     }
-    
+
     return ResponseHelper.success(res, 200, 'Menu item retrieved successfully', {
       menuItem
     });
@@ -224,40 +224,40 @@ const updateMenuItem = async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Menu = models.Menu;
     const Restaurant = models.Restaurant;
-    
+
     const menuItem = await Menu.findOne({
       _id: id,
       ownerId: req.ownerId
     });
-    
+
     if (!menuItem) {
       return ResponseHelper.notFound(res, 'Menu item not found');
     }
-    
+
     // Handle new image uploads
     if (req.files && req.files.length > 0) {
       const newImages = req.files.map(file => `/uploads/images/${file.filename}`);
       // Append to existing images or replace based on requirement
       updateData.images = [...(menuItem.images || []), ...newImages];
     }
-    
+
     // Verify specific branches if being updated
     if (updateData.specificBranches && updateData.specificBranches.length > 0) {
       const restaurants = await Restaurant.find({
         _id: { $in: updateData.specificBranches },
         ownerId: req.ownerId
       });
-      
+
       if (restaurants.length !== updateData.specificBranches.length) {
         if (req.files) deleteUploadedFiles(req.files);
         return ResponseHelper.error(res, 400, 'One or more restaurants not found');
       }
     }
-    
+
     // Update allowed fields
     const allowedFields = [
       'name',
@@ -278,7 +278,7 @@ const updateMenuItem = async (req, res) => {
       'spiceLevel',
       'customizations'
     ];
-    
+
     allowedFields.forEach(field => {
       if (updateData[field] !== undefined) {
         if (typeof updateData[field] === 'object' && !Array.isArray(updateData[field])) {
@@ -289,11 +289,11 @@ const updateMenuItem = async (req, res) => {
         }
       }
     });
-    
+
     await menuItem.save();
-    
+
     logger.info(`Menu item updated: ${menuItem._id} by ${req.user.role}: ${req.user.id}`);
-    
+
     return ResponseHelper.success(res, 200, 'Menu item updated successfully', {
       menuItem
     });
@@ -311,25 +311,25 @@ const updateMenuItem = async (req, res) => {
 const deleteMenuItem = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Menu = models.Menu;
-    
+
     const menuItem = await Menu.findOne({
       _id: id,
       ownerId: req.ownerId
     });
-    
+
     if (!menuItem) {
       return ResponseHelper.notFound(res, 'Menu item not found');
     }
-    
+
     // Soft delete - just mark as inactive
     menuItem.isActive = false;
     await menuItem.save();
-    
+
     logger.warn(`Menu item deleted: ${menuItem._id} by ${req.user.role}: ${req.user.id}`);
-    
+
     return ResponseHelper.success(res, 200, 'Menu item deleted successfully');
   } catch (error) {
     logger.error('Delete menu item error:', error);
@@ -345,32 +345,32 @@ const toggleAvailability = async (req, res) => {
   try {
     const { id } = req.params;
     const { restaurantId, isAvailable, reason } = req.body;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Menu = models.Menu;
-    
+
     const menuItem = await Menu.findOne({
       _id: id,
       ownerId: req.ownerId
     });
-    
+
     if (!menuItem) {
       return ResponseHelper.notFound(res, 'Menu item not found');
     }
-    
+
     // Toggle availability for specific restaurant
     await menuItem.toggleAvailability(restaurantId, isAvailable, reason);
-    
+
     logger.info(`Menu availability toggled: ${menuItem._id} at restaurant: ${restaurantId} to ${isAvailable}`);
-    
+
     // Emit socket event for real-time update
     const io = req.app.get('io');
-    io.to(`restaurant:${restaurantId}`).emit('menu:availabilityChanged', {
+    io.to(`restaurant:${req.ownerId}:${restaurantId}`).emit('menu:availabilityChanged', {
       menuId: menuItem._id,
       isAvailable,
       reason
     });
-    
+
     return ResponseHelper.success(res, 200, 'Menu availability updated successfully', {
       menuItem: {
         id: menuItem._id,
@@ -391,36 +391,36 @@ const toggleAvailability = async (req, res) => {
 const bulkToggleAvailability = async (req, res) => {
   try {
     const { menuIds, restaurantId, isAvailable, reason } = req.body;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Menu = models.Menu;
-    
+
     const menuItems = await Menu.find({
       _id: { $in: menuIds },
       ownerId: req.ownerId
     });
-    
+
     if (menuItems.length === 0) {
       return ResponseHelper.notFound(res, 'No menu items found');
     }
-    
+
     // Toggle availability for all
-    const promises = menuItems.map(item => 
+    const promises = menuItems.map(item =>
       item.toggleAvailability(restaurantId, isAvailable, reason)
     );
-    
+
     await Promise.all(promises);
-    
+
     logger.info(`Bulk availability toggle: ${menuItems.length} items at restaurant: ${restaurantId}`);
-    
+
     // Emit socket event
     const io = req.app.get('io');
-    io.to(`restaurant:${restaurantId}`).emit('menu:bulkAvailabilityChanged', {
+    io.to(`restaurant:${req.ownerId}:${restaurantId}`).emit('menu:bulkAvailabilityChanged', {
       menuIds,
       isAvailable,
       reason
     });
-    
+
     return ResponseHelper.success(res, 200, `${menuItems.length} menu items updated successfully`);
   } catch (error) {
     logger.error('Bulk toggle availability error:', error);
@@ -436,13 +436,13 @@ const getCategories = async (req, res) => {
   try {
     const models = getOwnerModels(req.ownerId);
     const Menu = models.Menu;
-    
+
     // Get unique categories
     const categories = await Menu.distinct('category', {
       ownerId: req.ownerId,
       isActive: true
     });
-    
+
     // Get count per category
     const categoryCounts = await Menu.aggregate([
       {
@@ -461,7 +461,7 @@ const getCategories = async (req, res) => {
         $sort: { count: -1 }
       }
     ]);
-    
+
     return ResponseHelper.success(res, 200, 'Categories retrieved successfully', {
       categories: categoryCounts.map(cat => ({
         name: cat._id,
@@ -481,37 +481,37 @@ const getCategories = async (req, res) => {
 const duplicateMenuItem = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Menu = models.Menu;
-    
+
     const originalItem = await Menu.findOne({
       _id: id,
       ownerId: req.ownerId
     });
-    
+
     if (!originalItem) {
       return ResponseHelper.notFound(res, 'Menu item not found');
     }
-    
+
     // Create duplicate
     const duplicateData = originalItem.toObject();
     delete duplicateData._id;
     delete duplicateData.createdAt;
     delete duplicateData.updatedAt;
     delete duplicateData.__v;
-    
+
     // Modify name to indicate it's a copy
     duplicateData.name.en = `${duplicateData.name.en} (Copy)`;
     if (duplicateData.name.hi) duplicateData.name.hi = `${duplicateData.name.hi} (प्रति)`;
     if (duplicateData.name.ar) duplicateData.name.ar = `${duplicateData.name.ar} (نسخة)`;
-    
+
     duplicateData.createdBy = req.user.id;
-    
+
     const newMenuItem = await Menu.create(duplicateData);
-    
+
     logger.info(`Menu item duplicated: ${id} -> ${newMenuItem._id}`);
-    
+
     return ResponseHelper.created(res, 'Menu item duplicated successfully', {
       menuItem: newMenuItem
     });
@@ -528,28 +528,28 @@ const duplicateMenuItem = async (req, res) => {
 const getPopularItems = async (req, res) => {
   try {
     const { restaurantId, limit = 10 } = req.query;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Menu = models.Menu;
-    
+
     const query = {
       ownerId: req.ownerId,
       isActive: true
     };
-    
+
     if (restaurantId) {
       query.$or = [
         { sharedAcrossBranches: true },
         { specificBranches: restaurantId }
       ];
     }
-    
+
     // Get items sorted by total orders (or you can use tags)
     const popularItems = await Menu.find(query)
       .sort({ totalOrders: -1 })
       .limit(parseInt(limit))
       .lean();
-    
+
     return ResponseHelper.success(res, 200, 'Popular items retrieved successfully', {
       items: popularItems
     });
@@ -566,34 +566,34 @@ const getPopularItems = async (req, res) => {
 const checkAvailability = async (req, res) => {
   try {
     const { id, restaurantId } = req.params;
-    
+
     const models = getOwnerModels(req.ownerId);
     const Menu = models.Menu;
     const Inventory = models.Inventory;
-    
+
     const menuItem = await Menu.findOne({
       _id: id,
       ownerId: req.ownerId
     }).populate('linkedInventoryItems.inventoryId');
-    
+
     if (!menuItem) {
       return ResponseHelper.notFound(res, 'Menu item not found');
     }
-    
+
     // Check if available at restaurant
     const isAvailable = menuItem.isAvailableAt(restaurantId);
-    
+
     // Check inventory availability
     let inventoryAvailable = true;
     let outOfStockItems = [];
-    
+
     if (menuItem.linkedInventoryItems && menuItem.linkedInventoryItems.length > 0) {
       for (let item of menuItem.linkedInventoryItems) {
         const inventory = await Inventory.findOne({
           _id: item.inventoryId,
           restaurantId
         });
-        
+
         if (!inventory || inventory.currentStock < item.quantityRequired) {
           inventoryAvailable = false;
           outOfStockItems.push({
@@ -604,14 +604,14 @@ const checkAvailability = async (req, res) => {
         }
       }
     }
-    
+
     return ResponseHelper.success(res, 200, 'Availability checked successfully', {
       menuItem: {
         id: menuItem._id,
         name: menuItem.name,
         isAvailable: isAvailable && inventoryAvailable,
-        reason: !isAvailable ? 'Marked unavailable by staff' : 
-                !inventoryAvailable ? 'Insufficient inventory' : 'Available'
+        reason: !isAvailable ? 'Marked unavailable by staff' :
+          !inventoryAvailable ? 'Insufficient inventory' : 'Available'
       },
       inventory: {
         available: inventoryAvailable,

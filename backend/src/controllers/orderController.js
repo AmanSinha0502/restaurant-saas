@@ -100,6 +100,7 @@ const createOrder = async (req, res) => {
     // 6. Generate order number & create
     const orderNumber = await Order.generateOrderNumber(restaurantId);
     const order = await Order.create({
+        ownerId: req.ownerId,
       restaurantId,
       orderNumber,
       customer: {
@@ -149,7 +150,7 @@ const createOrder = async (req, res) => {
 
     // 8. Emit event
     const io = req.app.get('io');
-    io.to(`restaurant:${restaurantId}`).emit('order:created', {
+    io.to(`kitchen:${req.ownerId}:${restaurantId}`).emit('order:created', {
       orderId: order._id,
       orderNumber: order.orderNumber,
       orderType: order.orderType,

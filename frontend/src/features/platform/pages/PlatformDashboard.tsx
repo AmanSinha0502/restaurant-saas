@@ -1,11 +1,11 @@
 // src/features/platform/pages/PlatformDashboard.tsx
 import React, { useState, type JSX } from 'react';
-import Topbar from '../../../components/platform/Topbar';
-import DashboardCard from '../../../components/platform/DashboardCard';
-import CreateOwnerModal from '../../../components/platform/modals/createOwnerModal';
-import EditOwnerModal from '../../../components/platform/modals/EditOwnerModal';
-import ResetPasswordModal from '../../../components/platform/modals/ResetPasswordModal';
-import ConfirmDeleteModal from '../../../components/platform/modals/ConfirmDeleteModal';
+import Topbar from '../components/Topbar';
+import DashboardCard from '../components/DashboardCard';
+import CreateOwnerModal from '../components/createOwnerModal';
+import EditOwnerModal from '../components/EditOwnerModal';
+import ResetPasswordModal from '../components/ResetPasswordModal';
+import ConfirmDeleteModal from '../components/ConfirmDeleteModal';
 import * as platformAPI from '../../../services/platform.services';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Owner } from '../../../types';

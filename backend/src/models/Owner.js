@@ -4,7 +4,6 @@ const bcrypt = require('bcryptjs');
 const ownerSchema = new mongoose.Schema({
     ownerId: {
     type: String,
-    required: true,
     unique: true,
     trim: true
   },
@@ -46,7 +45,14 @@ const ownerSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
-  
+//   subdomain: {
+//   type: String,
+//   required: true,
+//   unique: true,
+//   lowercase: true,
+//   trim: true
+// },
+
   ownedDatabases: [{
     type: String // Array of database names like ['owner_owner123']
   }],
@@ -69,12 +75,21 @@ const ownerSchema = new mongoose.Schema({
   collection: 'restaurantOwners'
 });
 
-// Hash password before saving
+// Hash password and assign ownerId automatically
 ownerSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  this.password = await bcrypt.hash(this.password, 12);
+  // Hash password
+  if (this.isModified('password')) {
+    this.password = await bcrypt.hash(this.password, 12);
+  }
+
+  // Assign ownerId from _id if not already set
+  if (!this.ownerId) {
+    this.ownerId = this._id.toString();
+  }
+
   next();
 });
+
 
 // Compare password method
 ownerSchema.methods.comparePassword = async function(candidatePassword) {

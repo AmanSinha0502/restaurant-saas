@@ -321,6 +321,12 @@
 const mongoose = require('mongoose');
 
 const orderSchema = new mongoose.Schema({
+  ownerId: {
+  type: String,
+  required: true,
+  index: true
+},
+
   // Basic Info
   restaurantId: {
     type: mongoose.Schema.Types.ObjectId,

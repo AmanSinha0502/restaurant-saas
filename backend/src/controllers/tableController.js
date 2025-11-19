@@ -77,7 +77,7 @@ const createTable = async (req, res) => {
     
     // Emit socket event
     const io = req.app.get('io');
-    io.to(`restaurant:${restaurantId}`).emit('table:created', {
+    io.to(`restaurant:${req.ownerId}:${restaurantId}`).emit('table:created', {
       table: {
         id: table._id,
         tableNumber: table.tableNumber,
