@@ -1,6 +1,6 @@
 const ResponseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
-const { PlatformAdmin, Owner, getOwnerModel } = require('../models');
+const { PlatformAdmin, Owner, getOwnerModel, getOwnerModels } = require('../models');
 const { generateTokenPair } = require('../config/jwt');
 const crypto = require('crypto');
 /**
@@ -21,7 +21,7 @@ const createRestaurant = async (req, res) => {
       defaultLanguage
     } = req.body;
     
-    const models = getOwnerModel(req.ownerId);
+    const models = getOwnerModels(req.ownerId);
     const Restaurant = models.Restaurant;
     
     // Auto-generate slug from name
@@ -59,6 +59,8 @@ const createRestaurant = async (req, res) => {
     // Create restaurant
     const restaurant = await Restaurant.create({
       ownerId: req.ownerId,
+      // Tenant-unique subdomain required by schema — use ownerId + slug
+      subdomain: `${req.ownerId}-${slug}`,
       name,
       slug,
       address,
@@ -117,7 +119,7 @@ const getAllRestaurants = async (req, res) => {
   try {
     const { status, search } = req.query;
     
-    const models = getOwnerModel(req.ownerId);
+    const models = getOwnerModels(req.ownerId);
     const Restaurant = models.Restaurant;
     
     // Build query
@@ -167,7 +169,7 @@ const getRestaurantById = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const models = getOwnerModel(req.ownerId);
+    const models = getOwnerModels(req.ownerId);
     const Restaurant = models.Restaurant;
     
     const restaurant = await Restaurant.findOne({
@@ -216,7 +218,7 @@ const updateRestaurant = async (req, res) => {
     const { id } = req.params;
     const updateData = req.body;
     
-    const models = getOwnerModel(req.ownerId);
+    const models = getOwnerModels(req.ownerId);
     const Restaurant = models.Restaurant;
     
     const restaurant = await Restaurant.findOne({
@@ -282,7 +284,7 @@ const updateRestaurantStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     
-    const models = getOwnerModel(req.ownerId);
+    const models = getOwnerModels(req.ownerId);
     const Restaurant = models.Restaurant;
     
     const restaurant = await Restaurant.findOne({
