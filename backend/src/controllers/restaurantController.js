@@ -356,7 +356,7 @@ const getRestaurantDashboard = async (req, res) => {
     const { id } = req.params;
     const { period = 'today' } = req.query; // today, week, month, year
     
-    const models = getOwnerModel(req.ownerId);
+    const models = getOwnerModels(req.ownerId);
     const Restaurant = models.Restaurant;
     const Order = models.Order;
     const Reservation = models.Reservation;
@@ -462,7 +462,7 @@ const getCumulativeDashboard = async (req, res) => {
   try {
     const { period = 'today' } = req.query;
     
-    const models = getOwnerModel(req.ownerId);
+    const models = getOwnerModels(req.ownerId);
     const Restaurant = models.Restaurant;
     const Order = models.Order;
     const Customer = models.Customer;

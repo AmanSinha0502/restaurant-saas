@@ -1,11 +1,25 @@
 export type Owner = {
   _id: string;
-  businessName: string;
+  ownerId?: string;
+  fullName: string;
   email: string;
   phone?: string;
-  country?: string;
-  active?: boolean;
-  createdAt?: string;
-  address?: string;
-  // add more fields as needed
+  password?: string;
+  isActive: boolean;
+  isFirstLogin?: boolean;
+  ownedDatabases?: string[];
+  lastLogin?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type PlatformStats = {
+  totalOwners: number;
+  activeOwners: number;
+  inactiveOwners: number;
+  newOwnersThisMonth: number;
+  totalRestaurants?: number;
+  totalOrders?: number;
+  totalRevenue?: number;
+  recentOwners?: Owner[];
 };

@@ -1,4 +1,4 @@
-const { PlatformAdmin, Owner, getOwnerModel } = require('../models');
+const { PlatformAdmin, Owner, getOwnerModel, getOwnerModels } = require('../models');
 const { generateTokenPair } = require('../config/jwt');
 const ResponseHelper = require('../utils/responseHelper');
 const logger = require('../utils/logger');
@@ -274,7 +274,8 @@ const adminLogin = async (req, res) => {
 const staffLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const ownerId = req.ownerId;
+    // Allow ownerId to come from request context (subdomain/token) or from body/query for local/testing
+    let ownerId = req.ownerId || req.body?.ownerId || req.query?.ownerId;
     if (!ownerId) {
       return ResponseHelper.error(res, 400, 'Owner ID not detected');
     }
@@ -475,6 +476,9 @@ const restaurant = await Restaurant.findOne({
 if (!restaurant) {
   return ResponseHelper.error(res, 400, 'Invalid restaurant');
 }
+
+// Hash the reset token to match the stored hashed version
+const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
 
 const customer = await Customer.findOne({
   restaurantId,

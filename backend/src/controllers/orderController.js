@@ -150,12 +150,17 @@ const createOrder = async (req, res) => {
 
     // 8. Emit event
     const io = req.app.get('io');
-    io.to(`kitchen:${req.ownerId}:${restaurantId}`).emit('order:created', {
-      orderId: order._id,
-      orderNumber: order.orderNumber,
-      orderType: order.orderType,
-      total: order.pricing.total
-    });
+      // Notify kitchen and other systems (if socket.io is available)
+      if (io) {
+        io.to(`kitchen:${req.ownerId}:${restaurantId}`).emit('order:created', {
+          orderId: order._id,
+          orderNumber: order.orderNumber,
+          orderType: order.orderType,
+          total: order.pricing.total
+        });
+      } else {
+        logger.warn('Socket.io not initialized - skipping realtime notification for order creation');
+      }
 
     return ResponseHelper.created(res, 'Order created successfully', {
       order: {
@@ -389,15 +394,20 @@ const updateOrderStatus = async (req, res) => {
     }
 
     const io = req.app.get('io');
-    io.to(`restaurant:${order.restaurantId}`).emit('order:statusUpdated', {
-      orderId: order._id,
-      orderNumber: order.orderNumber,
-      status: order.status
-    });
-    io.to(`customer:${order.customer.userId}`).emit('order:statusUpdated', {
-      orderId: order._id,
-      status: order.status
-    });
+      // Emit order status updates (if socket.io is available)
+      if (io) {
+        io.to(`restaurant:${order.restaurantId}`).emit('order:statusUpdated', {
+          orderId: order._id,
+          orderNumber: order.orderNumber,
+          status: order.status
+        });
+        io.to(`customer:${order.customer.userId}`).emit('order:statusUpdated', {
+          orderId: order._id,
+          status: order.status
+        });
+      } else {
+        logger.warn('Socket.io not initialized - skipping realtime notification for order status update');
+      }
 
     return ResponseHelper.success(res, 200, 'Order status updated successfully', { order });
   } catch (error) {

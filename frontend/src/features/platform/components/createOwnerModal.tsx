@@ -5,14 +5,12 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { MotionBackdrop, MotionCard } from './MotionModal';
 import { toast } from 'react-hot-toast';
-import type { Owner } from '../../../types';
 
 const schema = z.object({
-  businessName: z.string().min(2, 'Business name required'),
+  fullName: z.string().min(2, 'Owner name required'),
   email: z.string().email('Invalid email'),
   phone: z.string().min(7, 'Phone too short').optional().or(z.literal('')),
-  country: z.string().min(2, 'Country required'),
-  address: z.string().min(5, 'Address is short')
+  password: z.string().min(8, 'Password must be at least 8 characters').regex(/[A-Z]/, 'Must contain uppercase').regex(/[0-9]/, 'Must contain number')
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -20,7 +18,7 @@ type FormValues = z.infer<typeof schema>;
 export default function CreateOwnerModal({ open, onClose, onCreate }: { open:boolean; onClose:()=>void; onCreate:(payload:any)=>Promise<void> }) {
   const { register, handleSubmit, formState: { errors, isSubmitting }, reset } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { businessName:'', email:'', phone:'', country:'', address:'' }
+    defaultValues: { fullName:'', email:'', phone:'', password:'' }
   });
 
   if (!open) return null;
@@ -30,6 +28,7 @@ export default function CreateOwnerModal({ open, onClose, onCreate }: { open:boo
       await onCreate(data);
       toast.success('Owner created successfully');
       reset();
+      onClose();
     } catch (err:any) {
       console.error(err);
       toast.error(err?.message ?? 'Failed to create owner');
@@ -60,17 +59,17 @@ export default function CreateOwnerModal({ open, onClose, onCreate }: { open:boo
       {/* Form */}
       <form onSubmit={handleSubmit(submit)} className="grid grid-cols-1 gap-5">
 
-        {/* Business Name */}
+        {/* Owner Name */}
         <div>
-          <label className="block text-sm text-gray-300 mb-1">Business Owner Name</label>
+          <label className="block text-sm text-gray-300 mb-1">Owner Full Name</label>
           <input
-            {...register('businessName')}
-            placeholder="Enter business owner name"
+            {...register('fullName')}
+            placeholder="Enter owner full name"
             className="w-full rounded-lg px-4 py-2 bg-white/10 text-white 
                        border border-white/20 focus:border-yellow-400 focus:ring-0 transition-all"
           />
-          {errors.businessName && (
-            <p className="tiny text-red-400 mt-1">{errors.businessName.message}</p>
+          {errors.fullName && (
+            <p className="tiny text-red-400 mt-1">{errors.fullName.message}</p>
           )}
         </div>
 
@@ -102,31 +101,18 @@ export default function CreateOwnerModal({ open, onClose, onCreate }: { open:boo
           )}
         </div>
 
-        {/* Country */}
+        {/* Password */}
         <div>
-          <label className="block text-sm text-gray-300 mb-1">Country</label>
+          <label className="block text-sm text-gray-300 mb-1">Password</label>
           <input
-            {...register('country')}
-            placeholder="Country"
+            {...register('password')}
+            type="password"
+            placeholder="Minimum 8 characters, 1 uppercase, 1 number"
             className="w-full rounded-lg px-4 py-2 bg-white/10 text-white 
                        border border-white/20 focus:border-yellow-400 focus:ring-0 transition-all"
           />
-          {errors.country && (
-            <p className="tiny text-red-400 mt-1">{errors.country.message}</p>
-          )}
-        </div>
-
-        {/* Address */}
-        <div>
-          <label className="block text-sm text-gray-300 mb-1">Address</label>
-          <textarea
-            {...register('address')}
-            placeholder="Complete address"
-            className="w-full rounded-lg px-4 py-3 bg-white/10 text-white 
-                       border border-white/20 focus:border-yellow-400 h-24 resize-none focus:ring-0 transition-all"
-          />
-          {errors.address && (
-            <p className="tiny text-red-400 mt-1">{errors.address.message}</p>
+          {errors.password && (
+            <p className="tiny text-red-400 mt-1">{errors.password.message}</p>
           )}
         </div>
 

@@ -15,7 +15,7 @@ const reservationRoutes = require('./reservationRoutes');
 const inventoryRoutes = require('./InventoryRoutes');
 const supplierRoutes = require('./supplierRoutes');
 const customerRoutes = require('./customerRoutes');
-
+const webhookRoutes = require('./webhookRoute');
 
 
 const mountRoutes = (app) => {
@@ -67,6 +67,9 @@ const mountRoutes = (app) => {
 
   // Orders
   app.use('/api/orders', orderRoutes);
+
+  // Webhooks
+  app.use('/api/webhooks', webhookRoutes);
 
   // TODO: Add more routes as we build them
   app.use('/api/reservations', reservationRoutes);

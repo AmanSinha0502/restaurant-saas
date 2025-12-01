@@ -3,21 +3,14 @@ import React, { useState, type JSX } from 'react';
 import Topbar from '../components/Topbar';
 import DashboardCard from '../components/DashboardCard';
 import CreateOwnerModal from '../components/createOwnerModal';
-import EditOwnerModal from '../components/EditOwnerModal';
+// import EditOwnerModal from '../components/EditOwnerModal';
 import ResetPasswordModal from '../components/ResetPasswordModal';
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal';
 import * as platformAPI from '../../../services/platform.services';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Owner } from '../../../types';
+import type { Owner, PlatformStats } from '../../../types';
 import { motion } from 'framer-motion';
 import { toast } from 'react-hot-toast';
-
-// --- Types for stats
-type PlatformStats = {
-  totalOwners: number;
-  totalRevenue: number;
-  newOwners30d: number;
-};
 
 export default function PlatformDashboard(): JSX.Element {
   const qc = useQueryClient();
@@ -29,13 +22,16 @@ export default function PlatformDashboard(): JSX.Element {
     staleTime: 1000 * 60 * 2,
   });
 
-  const ownersQ = useQuery<{ owners: Owner[] }>({
+  const ownersQ = useQuery<Owner[]>({
     queryKey: ['platform', 'owners'],
-    queryFn: () => platformAPI.getAllOwners(),
+    queryFn: async () => {
+      const result = await platformAPI.getAllOwners();
+      return result;
+    },
     staleTime: 1000 * 30,
   });
 
-  const owners: Owner[] = ownersQ.data?.owners ?? [];
+  const owners: Owner[] = ownersQ.data ?? [];
 
   // Modal states
   const [openCreate, setOpenCreate] = useState(false);
@@ -50,6 +46,8 @@ export default function PlatformDashboard(): JSX.Element {
       await platformAPI.createOwner(payload);
       toast.success('Owner created successfully');
       await qc.invalidateQueries({ queryKey: ['platform', 'owners'] });
+      await qc.invalidateQueries({ queryKey: ['platform', 'stats'] });
+      setOpenCreate(false);
     } catch (err: any) {
       toast.error(err?.message ?? 'Failed to create owner');
     }
@@ -60,6 +58,8 @@ export default function PlatformDashboard(): JSX.Element {
       await platformAPI.updateOwner(id, payload);
       toast.success('Owner updated successfully');
       await qc.invalidateQueries({ queryKey: ['platform', 'owners'] });
+      setOpenEdit(false);
+      setSelected(null);
     } catch (err: any) {
       toast.error(err?.message ?? 'Failed to update owner');
     }
@@ -67,18 +67,20 @@ export default function PlatformDashboard(): JSX.Element {
 
   const handleToggleStatus = async (owner: Owner) => {
     try {
-      await platformAPI.toggleOwnerStatus(owner._id, { active: !owner.active });
-      toast.success(owner.active ? 'Owner deactivated' : 'Owner activated');
+      await platformAPI.toggleOwnerStatus(owner._id, !owner.isActive);
+      toast.success(owner.isActive ? 'Owner deactivated' : 'Owner activated');
       await qc.invalidateQueries({ queryKey: ['platform', 'owners'] });
     } catch (err: any) {
       toast.error('Failed to toggle owner status');
     }
   };
 
-  const handleResetPassword = async (id: string, payload: any) => {
+  const handleResetPassword = async (id: string, newPassword: string) => {
     try {
-      await platformAPI.resetOwnerPassword(id, payload);
+      await platformAPI.resetOwnerPassword(id, newPassword);
       toast.success('Password reset successfully');
+      setOpenReset(false);
+      setSelected(null);
     } catch (err: any) {
       toast.error('Failed to reset password');
     }
@@ -89,6 +91,8 @@ export default function PlatformDashboard(): JSX.Element {
       await platformAPI.deleteOwner(id);
       toast.success('Owner deleted');
       await qc.invalidateQueries({ queryKey: ['platform', 'owners'] });
+      setOpenDelete(false);
+      setSelected(null);
     } catch (err: any) {
       toast.error('Failed to delete owner');
     }
@@ -101,7 +105,7 @@ export default function PlatformDashboard(): JSX.Element {
       <main className="p-6">
         {/* --- KPI GRID --- */}
         <motion.div
-          className="dashboard-grid mb-8"
+          className="dashboard-grid mb-8 grid grid-cols-1 md:grid-cols-3 gap-4"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
@@ -109,17 +113,17 @@ export default function PlatformDashboard(): JSX.Element {
           <DashboardCard
             title="Total Restaurant Owners"
             value={statsQ.data?.totalOwners ?? 0}
-            hint="All active and inactive owners"
+            hint="All owners on platform"
           />
           <DashboardCard
-            title="Total Platform Revenue"
-            value={`₹${statsQ.data?.totalRevenue ?? 0}`}
-            hint="Aggregate across all restaurants"
+            title="Active Owners"
+            value={statsQ.data?.activeOwners ?? 0}
+            hint="Currently active"
           />
           <DashboardCard
             title="New Owners (30 days)"
-            value={statsQ.data?.newOwners30d ?? 0}
-            hint="Newly onboarded owners"
+            value={statsQ.data?.newOwnersThisMonth ?? 0}
+            hint="Newly onboarded"
           />
         </motion.div>
 
@@ -139,11 +143,11 @@ export default function PlatformDashboard(): JSX.Element {
             <table className="w-full text-sm">
               <thead>
                 <tr>
-                  <th className="text-left py-2">Business</th>
+                  <th className="text-left py-2">Name</th>
                   <th className="text-left py-2">Email</th>
                   <th className="text-left py-2">Phone</th>
-                  <th className="text-left py-2">Country</th>
                   <th className="text-left py-2">Status</th>
+                  <th className="text-left py-2">Created</th>
                   <th className="text-left py-2">Actions</th>
                 </tr>
               </thead>
@@ -151,24 +155,24 @@ export default function PlatformDashboard(): JSX.Element {
                 {owners.length > 0 ? (
                   owners.map((o) => (
                     <tr key={o._id} className="border-t border-white/10 hover:bg-white/5 transition">
-                      <td className="py-2 font-medium">{o.businessName}</td>
+                      <td className="py-2 font-medium">{o.fullName}</td>
                       <td className="py-2">{o.email}</td>
                       <td className="py-2">{o.phone ?? '—'}</td>
-                      <td className="py-2">{o.country ?? '—'}</td>
                       <td className="py-2">
-                        {o.active ? (
-                          <span className="badge active">Active</span>
+                        {o.isActive ? (
+                          <span className="badge active px-2 py-1 rounded bg-green-500/20 text-green-400">Active</span>
                         ) : (
-                          <span className="badge inactive">Inactive</span>
+                          <span className="badge inactive px-2 py-1 rounded bg-red-500/20 text-red-400">Inactive</span>
                         )}
                       </td>
+                      <td className="py-2 text-xs text-gray-400">{new Date(o.createdAt).toLocaleDateString()}</td>
                       <td className="py-2 space-x-2">
                         <button
                           onClick={() => {
                             setSelected(o);
                             setOpenEdit(true);
                           }}
-                          className="px-2 py-1 border rounded hover:bg-white/5"
+                          className="px-2 py-1 border rounded hover:bg-white/5 text-xs"
                         >
                           Edit
                         </button>
@@ -177,22 +181,22 @@ export default function PlatformDashboard(): JSX.Element {
                             setSelected(o);
                             setOpenReset(true);
                           }}
-                          className="px-2 py-1 border rounded hover:bg-white/5"
+                          className="px-2 py-1 border rounded hover:bg-white/5 text-xs"
                         >
-                          Reset
+                          Reset Pass
                         </button>
                         <button
                           onClick={() => handleToggleStatus(o)}
-                          className="px-2 py-1 border rounded hover:bg-white/5"
+                          className="px-2 py-1 border rounded hover:bg-white/5 text-xs"
                         >
-                          {o.active ? 'Deactivate' : 'Activate'}
+                          {o.isActive ? 'Deactivate' : 'Activate'}
                         </button>
                         <button
                           onClick={() => {
                             setSelected(o);
                             setOpenDelete(true);
                           }}
-                          className="px-2 py-1 border rounded hover:bg-destructive/20"
+                          className="px-2 py-1 border rounded hover:bg-red-500/20 text-xs text-red-400"
                         >
                           Delete
                         </button>
@@ -215,7 +219,7 @@ export default function PlatformDashboard(): JSX.Element {
       {/* --- MODALS --- */}
       <CreateOwnerModal open={openCreate} onClose={() => setOpenCreate(false)} onCreate={handleCreate} />
 
-      <EditOwnerModal
+      {/* <EditOwnerModal
         open={openEdit}
         onClose={() => {
           setOpenEdit(false);
@@ -223,7 +227,7 @@ export default function PlatformDashboard(): JSX.Element {
         }}
         owner={selected}
         onUpdate={handleUpdate}
-      />
+      /> */}
 
       <ResetPasswordModal
         open={openReset}
